@@ -1,0 +1,43 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing / build
+coverage/
+.next/
+out/
+build/
+dist/
+cache/
+out/
+broadcast/
+
+# foundry
+contracts/cache/
+contracts/out/
+contracts/broadcast/
+
+# misc
+.DS_Store
+*.pem
+*.log
+
+# env — never commit secrets
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# agent scratch
+agent-tools/
+.cursor/
