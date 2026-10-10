@@ -1,0 +1,9 @@
+{
+  "chainSelectorName": "monad-testnet",
+  "gatewayAddress": "0x421dCd87dc70d07589CA51200bf5Ec6065C12b8c",
+  "registryAddress": "0x9693aAd2540D75057D0CDce4c16891230D335A6B",
+  "gasLimit": "600000",
+  "maxRiskScore": 80,
+  "nullifierSaltId": "ENCLAVE_NULLIFIER_SALT",
+  "fiatRelayTokenId": "FIAT_RELAY_AUTH_TOKEN"
+}
