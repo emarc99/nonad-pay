@@ -77,8 +77,11 @@ function settlePayment(runtime: TeeRuntime<Config>, payment: PaymentView): strin
 
 	const fiat = mockFiatAttestation(payment.paymentId, relayToken)
 	const approved = fiat.verified && Number(payment.maxRiskScore) <= config.maxRiskScore
+	// Bind nullifier to paymentId so each remittance can settle once (salt alone is reused across demos).
 	const nullifier = keccak256(
-		toBytes(`${fiat.phoneHint}:${config.gatewayAddress.toLowerCase()}:${salt}`),
+		toBytes(
+			`${fiat.phoneHint}:${config.gatewayAddress.toLowerCase()}:${salt}:${payment.paymentId}`,
+		),
 	)
 	const expiry = BigInt(Math.floor(Date.now() / 1000) + 3600)
 
