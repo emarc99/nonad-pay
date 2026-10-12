@@ -1,12 +1,30 @@
-import { parseUnits, type Address, type Hex, type TransactionReceipt } from 'viem'
+import {
+  parseUnits,
+  type Abi,
+  type Address,
+  type Hex,
+  type TransactionReceipt,
+  type WalletClient,
+} from 'viem'
 import { AUSD, NONA_GATEWAY, PHONE_RESOLVER, AUSD_FAUCET } from './addresses'
 import { erc20Abi, faucetAbi, gatewayAbi, resolverAbi } from './abi'
 import { getWalletClient } from './mera'
 import { displayHandle, handleCommit } from './handles'
 import { publicClient } from './chain'
 
-const GAS = BigInt(800_000)
 const ZERO = '0x0000000000000000000000000000000000000000' as const
+/** Small headroom over estimateContractGas; avoid 800k blanket caps that strand low-MON wallets. */
+const GAS_BUFFER_BPS = 12000n // +20%
+
+function friendlyTxError(err: unknown): Error {
+  const msg = err instanceof Error ? err.message : String(err)
+  if (/insufficient balance|insufficient funds/i.test(msg)) {
+    return new Error(
+      'Not enough MON for gas. Tap Get test funds (or a Monad faucet), then retry. AUSD alone cannot pay fees.',
+    )
+  }
+  return err instanceof Error ? err : new Error(msg)
+}
 
 async function waitSuccess(hash: Hex): Promise<TransactionReceipt> {
   const receipt = await publicClient.waitForTransactionReceipt({ hash })
@@ -14,6 +32,49 @@ async function waitSuccess(hash: Hex): Promise<TransactionReceipt> {
     throw new Error(`Transaction reverted · ${hash}`)
   }
   return receipt
+}
+
+async function writeWithEstimatedGas(params: {
+  wallet: WalletClient
+  address: Address
+  abi: Abi
+  functionName: string
+  args: readonly unknown[]
+  account: NonNullable<WalletClient['account']>
+}) {
+  const { wallet, address, abi, functionName, args, account } = params
+  try {
+    const estimated = await publicClient.estimateContractGas({
+      address,
+      abi,
+      functionName,
+      args: args as never,
+      account,
+    })
+    const gas = (estimated * GAS_BUFFER_BPS) / 10000n
+    const fees = await publicClient.estimateFeesPerGas()
+    const maxFee = fees.maxFeePerGas ?? fees.gasPrice
+    if (maxFee) {
+      const need = gas * maxFee
+      const bal = await publicClient.getBalance({ address: account.address })
+      if (bal < need) {
+        throw new Error(
+          'Not enough MON for gas. Tap Get test funds (or a Monad faucet), then retry. AUSD alone cannot pay fees.',
+        )
+      }
+    }
+    return await wallet.writeContract({
+      address,
+      abi,
+      functionName,
+      args: args as never,
+      chain: wallet.chain,
+      account,
+      gas,
+    })
+  } catch (e) {
+    throw friendlyTxError(e)
+  }
 }
 
 export async function registerHandle(rawHandle: string, recipient: Address) {
@@ -48,14 +109,13 @@ export async function registerHandle(rawHandle: string, recipient: Address) {
     throw e
   }
 
-  const hash = await wallet.writeContract({
+  const hash = await writeWithEstimatedGas({
+    wallet,
     address: PHONE_RESOLVER,
     abi: resolverAbi,
     functionName: 'registerHandle',
     args: [commit, recipient],
-    chain: wallet.chain,
     account: wallet.account!,
-    gas: GAS,
   })
   await waitSuccess(hash)
   return { hash, commit }
@@ -82,25 +142,23 @@ export async function sendToHandle(rawHandle: string, amountStr: string, maxRisk
   const account = wallet.account!
   if (!account) throw new Error('Not signed in')
 
-  const approveHash = await wallet.writeContract({
+  const approveHash = await writeWithEstimatedGas({
+    wallet,
     address: AUSD,
     abi: erc20Abi,
     functionName: 'approve',
     args: [NONA_GATEWAY, amount],
-    chain: wallet.chain,
     account,
-    gas: GAS,
   })
   await waitSuccess(approveHash)
 
-  const hash = await wallet.writeContract({
+  const hash = await writeWithEstimatedGas({
+    wallet,
     address: NONA_GATEWAY,
     abi: gatewayAbi,
     functionName: 'openPayment',
     args: [AUSD, amount, commit, maxRiskScore],
-    chain: wallet.chain,
     account,
-    gas: GAS,
   })
   const receipt = await waitSuccess(hash)
   return { hash, commit, amount, receipt }
@@ -108,14 +166,13 @@ export async function sendToHandle(rawHandle: string, amountStr: string, maxRisk
 
 export async function requestAusdFaucet(to: Address) {
   const wallet = getWalletClient()
-  const hash = await wallet.writeContract({
+  const hash = await writeWithEstimatedGas({
+    wallet,
     address: AUSD_FAUCET,
     abi: faucetAbi,
     functionName: 'requestFunds',
     args: [to],
-    chain: wallet.chain,
     account: wallet.account!,
-    gas: GAS,
   })
   await waitSuccess(hash)
   return hash as Hex
