@@ -1,20 +1,26 @@
 import {
+	bigintToProtoBigInt,
 	bytesToHex,
 	cre,
 	getNetwork,
+	hexToBase64,
+	protoBigIntToBigint,
 	TxStatus,
 	type TeeRuntime,
 } from '@chainlink/cre-sdk'
 import {
 	type Address,
 	encodeAbiParameters,
+	encodeEventTopics,
 	keccak256,
 	parseAbiParameters,
 	toBytes,
+	type Hex,
 } from 'viem'
 import { z } from 'zod'
 import {
 	NonaGateway,
+	NonaGatewayABI,
 	type DecodedLog,
 	type PaymentOpenedDecoded,
 } from '../contracts/evm/ts/generated/NonaGateway'
@@ -22,8 +28,8 @@ import { NonaRegistry } from '../contracts/evm/ts/generated/NonaRegistry'
 
 /**
  * NonaPay remittance CRE workflow.
- * - handlerInTee + PaymentOpened log trigger (production path)
- * - cron simulate path writes the same report ABI (Monad sim engine log-trigger gap)
+ * - Log trigger on PaymentOpened (primary live path when DON delivers it)
+ * - Cron polls recent PaymentOpened via filterLogs and settles unsettled ones (backup)
  */
 
 export const configSchema = z.object({
@@ -34,13 +40,17 @@ export const configSchema = z.object({
 	maxRiskScore: z.number().default(80),
 	nullifierSaltId: z.string().default('ENCLAVE_NULLIFIER_SALT'),
 	fiatRelayTokenId: z.string().default('FIAT_RELAY_AUTH_TOKEN'),
+	/** Optional single-ID override for local simulate --broadcast only. */
 	demoPaymentId: z.string().optional(),
 	demoRecipientCommit: z.string().optional(),
 	demoPayer: z.string().optional(),
 	demoAmount: z.string().optional(),
 	schedule: z.string().default('0 */1 * * * *'),
-	/** Set true when CRE sim/runtime supports Monad log triggers for this tenant. */
-	enableLogTrigger: z.boolean().default(false),
+	/** Recent blocks cron scans for PaymentOpened (keep under RPC range caps). */
+	lookbackBlocks: z.number().default(90),
+	/** Max unsettled payments to settle per cron tick. */
+	maxSettlementsPerTick: z.number().default(3),
+	enableLogTrigger: z.boolean().default(true),
 })
 type Config = z.infer<typeof configSchema>
 
@@ -77,7 +87,6 @@ function settlePayment(runtime: TeeRuntime<Config>, payment: PaymentView): strin
 
 	const fiat = mockFiatAttestation(payment.paymentId, relayToken)
 	const approved = fiat.verified && Number(payment.maxRiskScore) <= config.maxRiskScore
-	// Bind nullifier to paymentId so each remittance can settle once (salt alone is reused across demos).
 	const nullifier = keccak256(
 		toBytes(
 			`${fiat.phoneHint}:${config.gatewayAddress.toLowerCase()}:${salt}:${payment.paymentId}`,
@@ -133,13 +142,12 @@ export const onPaymentOpened = (
 	})
 }
 
-export const onCronSimulate = (runtime: TeeRuntime<Config>): string => {
+/** Local simulate --broadcast helper: settle one explicit paymentId from config. */
+function settleDemoOverride(runtime: TeeRuntime<Config>): string | undefined {
 	const config = runtime.config
-	if (!config.demoPaymentId || !config.demoRecipientCommit) {
-		runtime.log('Cron heartbeat — no demoPaymentId configured (idle)')
-		return 'idle'
-	}
+	if (!config.demoPaymentId || !config.demoRecipientCommit) return undefined
 
+	const donRuntime = runtime.usingTheDons()
 	const network = getNetwork({
 		chainFamily: 'evm',
 		chainSelectorName: config.chainSelectorName,
@@ -147,16 +155,15 @@ export const onCronSimulate = (runtime: TeeRuntime<Config>): string => {
 	})
 	if (!network) throw new Error(`Network not found: ${config.chainSelectorName}`)
 
-	const donRuntime = runtime.usingTheDons()
 	const evmClient = new cre.capabilities.EVMClient(network.chainSelector.selector)
 	const registry = new NonaRegistry(evmClient, config.registryAddress as Address)
 	const already = registry.processedPayments(donRuntime, config.demoPaymentId as `0x${string}`)
 	if (already) {
-		runtime.log(`Cron heartbeat — payment ${config.demoPaymentId} already settled`)
-		return 'already-settled'
+		runtime.log(`demoPaymentId ${config.demoPaymentId} already settled — falling through to log poll`)
+		return undefined
 	}
 
-	runtime.log('Cron path — writing CRE report for configured PaymentOpened')
+	runtime.log('demoPaymentId override — settling configured payment')
 	return settlePayment(runtime, {
 		paymentId: config.demoPaymentId as `0x${string}`,
 		payer: (config.demoPayer || '0x0000000000000000000000000000000000000001') as `0x${string}`,
@@ -164,6 +171,75 @@ export const onCronSimulate = (runtime: TeeRuntime<Config>): string => {
 		amount: BigInt(config.demoAmount || '0'),
 		maxRiskScore: BigInt(10),
 	})
+}
+
+/**
+ * Cron backup: scan recent PaymentOpened logs, settle unsettled payments.
+ * New pays do not require editing demoPaymentId.
+ */
+export const onCronPoll = (runtime: TeeRuntime<Config>): string => {
+	const override = settleDemoOverride(runtime)
+	if (override) return override
+
+	const config = runtime.config
+	const donRuntime = runtime.usingTheDons()
+	const network = getNetwork({
+		chainFamily: 'evm',
+		chainSelectorName: config.chainSelectorName,
+		isTestnet: true,
+	})
+	if (!network) throw new Error(`Network not found: ${config.chainSelectorName}`)
+
+	const evmClient = new cre.capabilities.EVMClient(network.chainSelector.selector)
+	const gateway = new NonaGateway(evmClient, config.gatewayAddress as Address)
+	const registry = new NonaRegistry(evmClient, config.registryAddress as Address)
+
+	const header = evmClient.headerByNumber(donRuntime, {}).result()
+	if (!header.header?.blockNumber) throw new Error('headerByNumber missing blockNumber')
+	const latest = protoBigIntToBigint(header.header.blockNumber)
+	const from = latest > BigInt(config.lookbackBlocks) ? latest - BigInt(config.lookbackBlocks) : 0n
+
+	const topic0 = encodeEventTopics({
+		abi: NonaGatewayABI,
+		eventName: 'PaymentOpened',
+	})[0] as Hex
+
+	const reply = evmClient
+		.filterLogs(donRuntime, {
+			filterQuery: {
+				fromBlock: bigintToProtoBigInt(from),
+				toBlock: bigintToProtoBigInt(latest),
+				addresses: [hexToBase64(config.gatewayAddress as Hex)],
+				topics: [{ topic: [hexToBase64(topic0)] }],
+			},
+		})
+		.result()
+
+	const logs = reply.logs ?? []
+	runtime.log(`Cron poll blocks ${from}-${latest}: ${logs.length} PaymentOpened log(s)`)
+
+	const results: string[] = []
+	for (const raw of logs) {
+		if (results.length >= config.maxSettlementsPerTick) break
+		const decoded = gateway.decodePaymentOpened(raw)
+		const paymentId = decoded.data.paymentId as `0x${string}`
+		if (registry.processedPayments(donRuntime, paymentId)) {
+			runtime.log(`skip settled ${paymentId}`)
+			continue
+		}
+		results.push(
+			settlePayment(runtime, {
+				paymentId,
+				payer: decoded.data.payer as `0x${string}`,
+				recipientCommit: decoded.data.recipientCommit as `0x${string}`,
+				amount: BigInt(decoded.data.amount),
+				maxRiskScore: BigInt(decoded.data.maxRiskScore),
+			}),
+		)
+	}
+
+	if (results.length === 0) return `polled ${logs.length} log(s); nothing to settle`
+	return results.join(' | ')
 }
 
 export function initWorkflow(config: Config) {
@@ -175,17 +251,18 @@ export function initWorkflow(config: Config) {
 	if (!network) throw new Error(`Network not found: ${config.chainSelectorName}`)
 
 	const cron = new cre.capabilities.CronCapability()
+	const handlers = [
+		cre.handlerInTee(cron.trigger({ schedule: config.schedule }), onCronPoll, {}),
+	] as const
 
-	// Monad EVM log-trigger capability is not yet available in local sim for this tenant.
-	// Production deploy can flip enableLogTrigger once Chainlink enables it.
 	if (config.enableLogTrigger) {
 		const evmClient = new cre.capabilities.EVMClient(network.chainSelector.selector)
 		const gateway = new NonaGateway(evmClient, config.gatewayAddress as Address)
 		return [
-			cre.handlerInTee(cron.trigger({ schedule: config.schedule }), onCronSimulate, {}),
+			...handlers,
 			cre.handlerInTee(gateway.logTriggerPaymentOpened(), onPaymentOpened, {}),
 		] as const
 	}
 
-	return [cre.handlerInTee(cron.trigger({ schedule: config.schedule }), onCronSimulate, {})]
+	return handlers
 }
