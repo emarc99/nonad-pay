@@ -22,9 +22,12 @@
 
 | Item | Value |
 | --- | --- |
-| MockKeystone (simulate --broadcast) | `0xB9F79d863261869B234c481D1f9A7af84AeAd192` |
-| Keystone (deployed workflows) | `0xF8344CFd5c43616a4366C34E3EEE75af79a74482` |
+| Staging registry | `private` (Chainlink-hosted — no mainnet gas / LinkOwner) |
+| Live workflow | `nonapay-remittance-staging` |
+| MockKeystone (local `simulate --broadcast` only) | `0xB9F79d863261869B234c481D1f9A7af84AeAd192` |
+| Keystone (live DON writeReport) | `0xF8344CFd5c43616a4366C34E3EEE75af79a74482` |
 | CRE docs | https://docs.chain.link/cre |
+| Private registry deploy | https://docs.chain.link/cre/guides/operations/deploying-to-private-registry-ts |
 | Confidential workflows | https://docs.chain.link/cre/guides/workflow/using-confidential-workflows |
 
 ## Mera
