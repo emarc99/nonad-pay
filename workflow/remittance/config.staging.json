@@ -10,5 +10,6 @@
   "demoRecipientCommit": "0xddc80da57d6f8ddd1b004601d2e5cd707d813ee99038c5f1debcd1d43d083976",
   "demoPayer": "0x4092204b0E029b8f8d42dB17eF2cc9AE1aE96DBe",
   "demoAmount": "200000000",
-  "schedule": "0 */1 * * * *"
+  "schedule": "0 */5 * * * *",
+  "enableLogTrigger": true
 }

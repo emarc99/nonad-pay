@@ -136,9 +136,27 @@ export const onPaymentOpened = (
 export const onCronSimulate = (runtime: TeeRuntime<Config>): string => {
 	const config = runtime.config
 	if (!config.demoPaymentId || !config.demoRecipientCommit) {
-		throw new Error('demoPaymentId/demoRecipientCommit required for cron simulate path')
+		runtime.log('Cron heartbeat — no demoPaymentId configured (idle)')
+		return 'idle'
 	}
-	runtime.log('Cron simulate path — writing CRE report for demo PaymentOpened')
+
+	const network = getNetwork({
+		chainFamily: 'evm',
+		chainSelectorName: config.chainSelectorName,
+		isTestnet: true,
+	})
+	if (!network) throw new Error(`Network not found: ${config.chainSelectorName}`)
+
+	const donRuntime = runtime.usingTheDons()
+	const evmClient = new cre.capabilities.EVMClient(network.chainSelector.selector)
+	const registry = new NonaRegistry(evmClient, config.registryAddress as Address)
+	const already = registry.processedPayments(donRuntime, config.demoPaymentId as `0x${string}`)
+	if (already) {
+		runtime.log(`Cron heartbeat — payment ${config.demoPaymentId} already settled`)
+		return 'already-settled'
+	}
+
+	runtime.log('Cron path — writing CRE report for configured PaymentOpened')
 	return settlePayment(runtime, {
 		paymentId: config.demoPaymentId as `0x${string}`,
 		payer: (config.demoPayer || '0x0000000000000000000000000000000000000001') as `0x${string}`,

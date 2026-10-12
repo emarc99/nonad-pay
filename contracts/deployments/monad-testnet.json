@@ -19,5 +19,8 @@
     "creWriteReportTx": "0xa59995d96547463032799c008bc31ccfecd55558504e9f542f59d824f6eedb0c",
     "handle": "amina",
     "handleHash": "0x3ada1a662fa82c265fa4920d10397386d8bdae1316b3151a6d427efb317145da"
-  }
+  },
+  "keystoneForwarder": "0xF8344CFd5c43616a4366C34E3EEE75af79a74482",
+  "mockKeystoneForwarder": "0xB9F79d863261869B234c481D1f9A7af84AeAd192",
+  "notes": "NonaRegistry.keystoneForwarder switched to Keystone for live private-registry DON writes; use Mock only for local simulate --broadcast."
 }

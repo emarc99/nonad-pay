@@ -1,6 +1,8 @@
 staging-settings:
   user-workflow:
     workflow-name: "nonapay-remittance-staging"
+    # Chainlink-hosted private registry — CRE session auth, no mainnet gas / LinkOwner
+    deployment-registry: "private"
   workflow-artifacts:
     workflow-path: "./main.ts"
     config-path: "./config.staging.json"
@@ -8,6 +10,7 @@ staging-settings:
 production-settings:
   user-workflow:
     workflow-name: "nonapay-remittance-production"
+    deployment-registry: "private"
   workflow-artifacts:
     workflow-path: "./main.ts"
     config-path: "./config.production.json"

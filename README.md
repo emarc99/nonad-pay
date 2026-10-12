@@ -45,13 +45,18 @@ Passkeys need `http://localhost` (or HTTPS) and a PRF-capable authenticator (Goo
 
 ## CRE workflow
 
+Staging uses the **private** (Chainlink-hosted) registry — no Ethereum mainnet ETH / `LinkOwner`.
+
 ```bash
 cd workflow
-# secrets.yaml + .env with CRE_ETH_PRIVATE_KEY / CRE_API_KEY
-cre workflow simulate remittance --target staging-settings --broadcast
+# CRE_API_KEY in workflow/.env (cre login / API key)
+cre workflow deploy remittance --target staging-settings --yes --non-interactive
+
+# Local settle proof (uses MockKeystone — temporarily setForwarder to Mock if registry is on Keystone):
+cre workflow simulate remittance --target staging-settings --broadcast --non-interactive --trigger-index 0
 ```
 
-Cron path proves TEE `writeReport` on Monad when log-trigger simulation is unavailable.
+Live deploy: `nonapay-remittance-staging` on private registry. `NonaRegistry` forwarder is Keystone (`0xF834…`) for DON writes; MockKeystone (`0xB9F79…`) is only for local `simulate --broadcast`.
 
 ## Handle commitment
 
