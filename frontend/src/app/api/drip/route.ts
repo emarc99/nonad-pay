@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server'
 import {
+  createPublicClient,
   createWalletClient,
   http,
   isAddress,
   parseEther,
+  parseGwei,
   parseUnits,
   type Address,
   type Hex,
@@ -14,7 +16,7 @@ import { AUSD } from '@/lib/addresses'
 import { erc20Abi } from '@/lib/abi'
 
 const recent = new Map<string, number>()
-const COOLDOWN_MS = 60_000
+const COOLDOWN_MS = 45_000
 
 const transferAbi = [
   ...erc20Abi,
@@ -65,26 +67,51 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Cooldown — try again in a minute' }, { status: 429 })
   }
 
+  const rpc = process.env.MONAD_RPC_URL ?? 'https://testnet-rpc.monad.xyz'
   const account = privateKeyToAccount(pk)
+  const publicClient = createPublicClient({
+    chain: monadTestnet,
+    transport: http(rpc),
+  })
   const wallet = createWalletClient({
     account,
     chain: monadTestnet,
-    transport: http(process.env.MONAD_RPC_URL ?? 'https://testnet-rpc.monad.xyz'),
+    transport: http(rpc),
   })
 
+  // Monad tip market is hot — underpriced replacements surface as "higher priority".
+  const fees = {
+    maxFeePerGas: parseGwei('120'),
+    maxPriorityFeePerGas: parseGwei('2'),
+  }
+
   try {
+    let nonce = await publicClient.getTransactionCount({
+      address: account.address,
+      blockTag: 'pending',
+    })
+
     const monHash = await wallet.sendTransaction({
       to: to as Address,
       value: parseEther('0.2'),
       gas: BigInt(100_000),
+      nonce,
+      ...fees,
     })
+    await publicClient.waitForTransactionReceipt({ hash: monHash })
+    nonce += 1
+
     const ausdHash = await wallet.writeContract({
       address: AUSD,
       abi: transferAbi,
       functionName: 'transfer',
       args: [to as Address, parseUnits('25', 6)],
       gas: BigInt(120_000),
+      nonce,
+      ...fees,
     })
+    await publicClient.waitForTransactionReceipt({ hash: ausdHash })
+
     recent.set(to.toLowerCase(), Date.now())
     return NextResponse.json({
       ok: true,
@@ -95,6 +122,8 @@ export async function POST(req: Request) {
     })
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Drip failed'
-    return NextResponse.json({ error: message }, { status: 500 })
+    // Keep error short for UI — full viem dumps are unreadable
+    const short = message.split('Details:')[0]?.trim() || message
+    return NextResponse.json({ error: short.slice(0, 280) }, { status: 500 })
   }
 }

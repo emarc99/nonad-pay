@@ -20,6 +20,34 @@ function explorerTx(hash: string) {
   return `https://testnet.monadexplorer.com/tx/${hash}`
 }
 
+function StatusLine({
+  status,
+  className = '',
+}: {
+  status: { tone: 'ok' | 'err' | 'info'; text: string; hash?: string }
+  className?: string
+}) {
+  const tone =
+    status.tone === 'err' ? 'status-err' : status.tone === 'ok' ? 'status-ok' : 'text-[var(--mist)]'
+  if (status.hash) {
+    return (
+      <p className={`${tone} ${className}`}>
+        {status.text}
+        {' · '}
+        <a
+          className="mono underline-offset-2 hover:underline"
+          href={explorerTx(status.hash)}
+          target="_blank"
+          rel="noreferrer"
+        >
+          {shorten(status.hash)}
+        </a>
+      </p>
+    )
+  }
+  return <p className={`${tone} ${className}`}>{status.text}</p>
+}
+
 export default function Home() {
   const [address, setAddress] = useState<Hex | undefined>()
   const [ausd, setAusd] = useState('0')
@@ -28,7 +56,11 @@ export default function Home() {
   const [handle, setHandle] = useState('')
   const [myHandle, setMyHandle] = useState('')
   const [tab, setTab] = useState<Tab>('send')
-  const [status, setStatus] = useState<{ tone: 'ok' | 'err' | 'info'; text: string } | null>(null)
+  const [status, setStatus] = useState<{
+    tone: 'ok' | 'err' | 'info'
+    text: string
+    hash?: string
+  } | null>(null)
   const [activity, setActivity] = useState<ActivityItem[]>([])
   const [amountKey, setAmountKey] = useState(0)
   const [pending, startTransition] = useTransition()
@@ -127,7 +159,7 @@ export default function Home() {
         hash,
       })
       setActivity(list)
-      setStatus({ tone: 'ok', text: `Payment opened · ${shorten(hash)}` })
+      setStatus({ tone: 'ok', text: 'Payment opened', hash })
       setAmount('0')
       await refreshBalances(address)
     })
@@ -145,7 +177,7 @@ export default function Home() {
         hash,
       })
       setActivity(list)
-      setStatus({ tone: 'ok', text: `${displayHandle(myHandle)} registered` })
+      setStatus({ tone: 'ok', text: `${displayHandle(myHandle)} registered`, hash })
     })
   }
 
@@ -160,7 +192,7 @@ export default function Home() {
         hash,
       })
       setActivity(list)
-      setStatus({ tone: 'ok', text: `Faucet tx · ${shorten(hash)}` })
+      setStatus({ tone: 'ok', text: 'Faucet tx', hash })
       await refreshBalances(address)
     })
   }
@@ -181,14 +213,22 @@ export default function Home() {
         ausd?: string
       }
       if (!res.ok) throw new Error(data.error ?? 'Drip failed')
-      const list = pushActivity({
+      pushActivity({
         kind: 'drip',
-        title: `Drip ${data.mon} MON + ${data.ausd} AUSD`,
-        detail: 'Local demo faucet',
+        title: `Drip ${data.mon} MON`,
+        detail: 'Local deployer drip',
         hash: data.monHash,
       })
-      setActivity(list)
-      setStatus({ tone: 'ok', text: 'Test funds landed' })
+      if (data.ausdHash) {
+        pushActivity({
+          kind: 'drip',
+          title: `Drip ${data.ausd} AUSD`,
+          detail: 'Local deployer drip',
+          hash: data.ausdHash,
+        })
+      }
+      setActivity(loadActivity())
+      setStatus({ tone: 'ok', text: 'Test funds', hash: data.monHash })
       await refreshBalances(address)
     })
   }
@@ -245,15 +285,7 @@ export default function Home() {
           <button type="button" className="ghost-btn w-full" disabled={pending} onClick={onSignIn}>
             I already have a passkey
           </button>
-          {status ? (
-            <p
-              className={`text-sm leading-relaxed ${
-                status.tone === 'err' ? 'status-err' : status.tone === 'ok' ? 'status-ok' : 'text-[var(--mist)]'
-              }`}
-            >
-              {status.text}
-            </p>
-          ) : null}
+          {status ? <StatusLine status={status} className="text-sm leading-relaxed" /> : null}
         </section>
       ) : (
         <>
@@ -410,15 +442,7 @@ export default function Home() {
             </section>
           ) : null}
 
-          {status ? (
-            <p
-              className={`mt-4 text-center text-sm ${
-                status.tone === 'err' ? 'status-err' : status.tone === 'ok' ? 'status-ok' : 'text-[var(--mist)]'
-              }`}
-            >
-              {status.text}
-            </p>
-          ) : null}
+          {status ? <StatusLine status={status} className="mt-4 text-center text-sm" /> : null}
         </>
       )}
 
