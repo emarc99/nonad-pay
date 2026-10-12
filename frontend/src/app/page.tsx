@@ -7,6 +7,7 @@ import { getAusdBalance, getMonBalance } from '@/lib/chain'
 import { displayHandle, handleCommit, normalizeHandle } from '@/lib/handles'
 import { registerHandle, requestAusdFaucet, sendToHandle } from '@/lib/payments'
 import { loadActivity, pushActivity, type ActivityItem } from '@/lib/activity'
+import { linkMyHandle, loadStoredMyHandle, saveMyHandle, syncStoredMyHandle } from '@/lib/myHandle'
 
 type Tab = 'send' | 'me' | 'activity'
 
@@ -75,7 +76,7 @@ export default function Home() {
 
   useEffect(() => {
     setActivity(loadActivity())
-    const saved = localStorage.getItem('nonapay.myHandle')
+    const saved = loadStoredMyHandle()
     if (saved) setMyHandle(saved)
     setHostOk(passkeyHostOk())
     setLocalUrl(localhostUrl())
@@ -84,6 +85,9 @@ export default function Home() {
   useEffect(() => {
     if (!address) return
     void refreshBalances(address).catch(() => undefined)
+    void syncStoredMyHandle(address)
+      .then((linked) => setMyHandle(linked))
+      .catch(() => undefined)
     const id = setInterval(() => {
       void refreshBalances(address).catch(() => undefined)
     }, 12_000)
@@ -128,7 +132,14 @@ export default function Home() {
     run('Creating passkey…', async () => {
       const addr = await createAccount()
       setAddress(addr)
-      setStatus({ tone: 'ok', text: `Passkey account ready · ${shorten(addr)}` })
+      const linked = await syncStoredMyHandle(addr)
+      if (linked) setMyHandle(linked)
+      setStatus({
+        tone: 'ok',
+        text: linked
+          ? `Passkey ready · ${shorten(addr)} · linked ${displayHandle(linked)}`
+          : `Passkey account ready · ${shorten(addr)}`,
+      })
     })
   }
 
@@ -136,7 +147,14 @@ export default function Home() {
     run('Confirm passkey…', async () => {
       const addr = await signIn('spend')
       setAddress(addr)
-      setStatus({ tone: 'ok', text: `Signed in · ${shorten(addr)}` })
+      const linked = await syncStoredMyHandle(addr)
+      if (linked) setMyHandle(linked)
+      setStatus({
+        tone: 'ok',
+        text: linked
+          ? `Signed in · ${shorten(addr)} · linked ${displayHandle(linked)}`
+          : `Signed in · ${shorten(addr)}. Link your @ on My @ if this device is new.`,
+      })
     })
   }
 
@@ -169,15 +187,31 @@ export default function Home() {
     if (!address) return
     run('Registering @handle…', async () => {
       const { hash, commit } = await registerHandle(myHandle, address)
-      localStorage.setItem('nonapay.myHandle', normalizeHandle(myHandle))
+      const normalized = saveMyHandle(myHandle)
+      setMyHandle(normalized)
       const list = pushActivity({
         kind: 'handle',
-        title: `Claimed ${displayHandle(myHandle)}`,
+        title: `Claimed ${displayHandle(normalized)}`,
         detail: `commit ${commit.slice(0, 10)}…`,
         hash,
       })
       setActivity(list)
-      setStatus({ tone: 'ok', text: `${displayHandle(myHandle)} registered`, hash })
+      setStatus({ tone: 'ok', text: `${displayHandle(normalized)} registered`, hash })
+    })
+  }
+
+  function onLinkHandle() {
+    if (!address) return
+    run('Verifying @handle on-chain…', async () => {
+      const { commit, normalized } = await linkMyHandle(myHandle, address)
+      setMyHandle(normalized)
+      const list = pushActivity({
+        kind: 'handle',
+        title: `Linked ${displayHandle(normalized)}`,
+        detail: `commit ${commit.slice(0, 10)}… · already owned on-chain`,
+      })
+      setActivity(list)
+      setStatus({ tone: 'ok', text: `${displayHandle(normalized)} linked to this passkey` })
     })
   }
 
@@ -379,9 +413,10 @@ export default function Home() {
           {tab === 'me' ? (
             <section className="panel flex flex-1 flex-col gap-4 p-5">
               <div>
-                <h2 className="font-[family-name:var(--font-display)] text-2xl font-bold">Claim your @</h2>
+                <h2 className="font-[family-name:var(--font-display)] text-2xl font-bold">Your @</h2>
                 <p className="mt-2 text-sm text-[var(--mist)]">
-                  Registers an opaque handle hash on PhoneResolver. Raw phone never hits the chain.
+                  Register a new name, or Link one you already own on another device. Ownership is
+                  checked on-chain via PhoneResolver.
                 </p>
               </div>
               <input
@@ -391,14 +426,24 @@ export default function Home() {
                 onChange={(e) => setMyHandle(e.target.value)}
                 autoCapitalize="none"
               />
-              <button
-                type="button"
-                className="primary-btn w-full"
-                disabled={pending || normalizeHandle(myHandle).length < 2}
-                onClick={onRegisterHandle}
-              >
-                Register {displayHandle(myHandle) || '@handle'}
-              </button>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <button
+                  type="button"
+                  className="primary-btn w-full"
+                  disabled={pending || normalizeHandle(myHandle).length < 2}
+                  onClick={onRegisterHandle}
+                >
+                  Register {displayHandle(myHandle) || '@handle'}
+                </button>
+                <button
+                  type="button"
+                  className="ghost-btn w-full !border !border-white/15 !py-3.5"
+                  disabled={pending || normalizeHandle(myHandle).length < 2}
+                  onClick={onLinkHandle}
+                >
+                  Link existing
+                </button>
+              </div>
               {normalizeHandle(myHandle) ? (
                 <p className="mono break-all text-[10px] text-[var(--mist)]">
                   {handleCommit(myHandle)}
