@@ -12,11 +12,9 @@ import { HDKey } from '@scure/bip32'
 import { entropyToMnemonic, mnemonicToSeedSync } from '@scure/bip39'
 import { wordlist } from '@scure/bip39/wordlists/english.js'
 import { createWalletClient, http, type Hex, type WalletClient } from 'viem'
-import { privateKeyToAccount, generatePrivateKey } from 'viem/accounts'
 import { monadTestnet } from 'viem/chains'
 
 const CRED_KEY = 'nonapay.credential'
-const DEMO_KEY = 'nonapay.demo.pk'
 
 function deriveEvmKey(prfOutput: Uint8Array, index = 0): Uint8Array {
   const seed = mnemonicToSeedSync(entropyToMnemonic(prfOutput, wordlist))
@@ -29,10 +27,40 @@ function deriveEvmKey(prfOutput: Uint8Array, index = 0): Uint8Array {
 export type KeyRole = 'master' | 'spend'
 
 let session: Secp256k1SigningSession | undefined
-let demoAccount: ReturnType<typeof privateKeyToAccount> | undefined
 
 function indexFor(role: KeyRole) {
   return role === 'spend' ? 1 : 0
+}
+
+/** WebAuthn RP IDs must be domains — IP literals like 127.0.0.1 are rejected. */
+export function passkeyHostOk(): boolean {
+  if (typeof window === 'undefined') return true
+  const host = location.hostname
+  if (host === 'localhost') return true
+  // Reject raw IPv4 / IPv6
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) return false
+  if (host.includes(':')) return false
+  return Boolean(host)
+}
+
+export function localhostUrl(): string {
+  if (typeof window === 'undefined') return 'http://localhost:43127'
+  return `${location.protocol}//localhost${location.port ? `:${location.port}` : ''}${location.pathname}${location.search}`
+}
+
+function assertPasskeyOrigin() {
+  if (typeof window === 'undefined') return
+  if (!window.isSecureContext) {
+    throw new Error('Passkeys need a secure context (https or http://localhost).')
+  }
+  if (!window.PublicKeyCredential) {
+    throw new Error('This browser has no WebAuthn / passkey support.')
+  }
+  if (!passkeyHostOk()) {
+    throw new Error(
+      `Invalid passkey domain “${location.hostname}”. Open ${localhostUrl()} instead of 127.0.0.1 — WebAuthn rejects IP addresses.`,
+    )
+  }
 }
 
 function formatPasskeyError(error: unknown): Error {
@@ -46,38 +74,29 @@ function formatPasskeyError(error: unknown): Error {
 
     if (error.code === 'PRF_UNAVAILABLE') {
       return new Error(
-        'This authenticator has no WebAuthn PRF. On desktop Chrome, save the passkey to Google Password Manager (or use 1Password / iCloud Keychain) — local fingerprint alone often fails. See mera.category.xyz/authenticator-support',
+        'Authenticator returned no WebAuthn PRF. In Chrome, choose Google Password Manager when creating the passkey (not “this device” / local profile).',
+      )
+    }
+
+    if (cause?.toLowerCase().includes('invalid domain')) {
+      return new Error(
+        `Invalid passkey domain “${location.hostname}”. Use ${localhostUrl()} — WebAuthn requires a hostname, not an IP.`,
       )
     }
 
     if (error.code === 'PASSKEY_OPERATION_FAILED') {
-      const hint = cause?.includes('NotAllowedError')
-        ? 'Cancelled or blocked by the browser.'
-        : cause?.includes('InvalidStateError')
-          ? 'Passkey already exists for this site.'
-          : cause || error.message
-      return new Error(`Passkey failed (${error.code}): ${hint}`)
+      return new Error(`Passkey failed: ${cause || error.message}`)
     }
 
-    return new Error(`Passkey failed (${error.code}): ${error.message}${cause ? ` — ${cause}` : ''}`)
+    return new Error(`${error.message}${cause ? ` — ${cause}` : ''}`)
   }
 
   if (error instanceof Error) return error
   return new Error(String(error))
 }
 
-function assertSecureContext() {
-  if (typeof window === 'undefined') return
-  if (!window.isSecureContext) {
-    throw new Error('Passkeys need a secure context (https or localhost).')
-  }
-  if (!window.PublicKeyCredential) {
-    throw new Error('This browser has no WebAuthn / passkey support.')
-  }
-}
-
 export async function createAccount() {
-  assertSecureContext()
+  assertPasskeyOrigin()
   try {
     const created = await createPasskeyWithPrfOutput({
       rp: { id: location.hostname, name: 'NonaPay' },
@@ -87,8 +106,6 @@ export async function createAccount() {
       CRED_KEY,
       JSON.stringify({ credentialId: created.credentialId, transports: created.transports }),
     )
-    localStorage.removeItem(DEMO_KEY)
-    demoAccount = undefined
     session?.end()
     session = createSecp256k1SigningSession({
       privateKey: deriveEvmKey(created.prfOutput, indexFor('spend')),
@@ -100,7 +117,7 @@ export async function createAccount() {
 }
 
 export async function signIn(role: KeyRole = 'spend') {
-  assertSecureContext()
+  assertPasskeyOrigin()
   try {
     const stored = localStorage.getItem(CRED_KEY)
     const known = stored ? JSON.parse(stored) : undefined
@@ -112,8 +129,6 @@ export async function signIn(role: KeyRole = 'spend') {
       CRED_KEY,
       JSON.stringify(known?.credentialId === credentialId ? known : { credentialId }),
     )
-    localStorage.removeItem(DEMO_KEY)
-    demoAccount = undefined
     session?.end()
     session = createSecp256k1SigningSession({
       privateKey: deriveEvmKey(prfOutput, indexFor(role)),
@@ -124,36 +139,7 @@ export async function signIn(role: KeyRole = 'spend') {
   }
 }
 
-/** Local-only wallet when the device/browser cannot do WebAuthn PRF. Not Mera-backed. */
-export function createDemoAccount() {
-  const pk = generatePrivateKey()
-  localStorage.setItem(DEMO_KEY, pk)
-  localStorage.removeItem(CRED_KEY)
-  session?.end()
-  session = undefined
-  demoAccount = privateKeyToAccount(pk)
-  return demoAccount.address
-}
-
-export function restoreDemoAccount(): Hex | undefined {
-  const pk = localStorage.getItem(DEMO_KEY) as Hex | null
-  if (!pk) return undefined
-  demoAccount = privateKeyToAccount(pk)
-  return demoAccount.address
-}
-
-export function isDemoSession() {
-  return Boolean(demoAccount) || Boolean(localStorage.getItem(DEMO_KEY))
-}
-
 export function getWalletClient(): WalletClient {
-  if (demoAccount) {
-    return createWalletClient({
-      account: demoAccount,
-      chain: monadTestnet,
-      transport: http('https://testnet-rpc.monad.xyz'),
-    })
-  }
   if (!session) throw new Error('Not signed in')
   return createWalletClient({
     account: toViemAccount(session),
@@ -163,7 +149,6 @@ export function getWalletClient(): WalletClient {
 }
 
 export function getAddress(): Hex | undefined {
-  if (demoAccount) return demoAccount.address
   if (!session) return undefined
   return toViemAccount(session).address
 }
@@ -171,5 +156,4 @@ export function getAddress(): Hex | undefined {
 export function signOut() {
   session?.end()
   session = undefined
-  demoAccount = undefined
 }

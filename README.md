@@ -36,10 +36,10 @@ cd contracts && forge test
 
 # frontend
 cd frontend && npm install && npm run dev
-# → http://127.0.0.1:43127
+# → http://localhost:43127   (use localhost — NOT 127.0.0.1; WebAuthn rejects IP RP IDs)
 ```
 
-Passkey create/sign-in needs a secure context (localhost or HTTPS) and a platform authenticator.
+Passkeys need `http://localhost` (or HTTPS) and a PRF-capable authenticator (Google Password Manager).
 
 **Get test funds** in the app drips `0.2 MON` + `25 AUSD` from the deployer key in repo-root `.env` (local demo only). Or use the Monad faucet for MON and Agora `requestFunds` for AUSD.
 

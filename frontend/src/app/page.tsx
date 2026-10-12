@@ -2,14 +2,7 @@
 
 import { useEffect, useState, useTransition } from 'react'
 import type { Hex } from 'viem'
-import {
-  createAccount,
-  createDemoAccount,
-  isDemoSession,
-  restoreDemoAccount,
-  signIn,
-  signOut,
-} from '@/lib/mera'
+import { createAccount, localhostUrl, passkeyHostOk, signIn, signOut } from '@/lib/mera'
 import { getAusdBalance, getMonBalance } from '@/lib/chain'
 import { displayHandle, handleCommit, normalizeHandle } from '@/lib/handles'
 import { registerHandle, requestAusdFaucet, sendToHandle } from '@/lib/payments'
@@ -39,6 +32,8 @@ export default function Home() {
   const [activity, setActivity] = useState<ActivityItem[]>([])
   const [amountKey, setAmountKey] = useState(0)
   const [pending, startTransition] = useTransition()
+  const [hostOk, setHostOk] = useState(true)
+  const [localUrl, setLocalUrl] = useState('http://localhost:43127')
 
   async function refreshBalances(addr: Hex) {
     const [a, m] = await Promise.all([getAusdBalance(addr), getMonBalance(addr)])
@@ -50,8 +45,8 @@ export default function Home() {
     setActivity(loadActivity())
     const saved = localStorage.getItem('nonapay.myHandle')
     if (saved) setMyHandle(saved)
-    const demo = restoreDemoAccount()
-    if (demo) setAddress(demo)
+    setHostOk(passkeyHostOk())
+    setLocalUrl(localhostUrl())
   }, [])
 
   useEffect(() => {
@@ -98,7 +93,7 @@ export default function Home() {
   }
 
   function onCreate() {
-    run('Creating passkey (needs WebAuthn PRF)…', async () => {
+    run('Creating passkey…', async () => {
       const addr = await createAccount()
       setAddress(addr)
       setStatus({ tone: 'ok', text: `Passkey account ready · ${shorten(addr)}` })
@@ -106,21 +101,10 @@ export default function Home() {
   }
 
   function onSignIn() {
-    run('Confirm fingerprint / passkey…', async () => {
+    run('Confirm passkey…', async () => {
       const addr = await signIn('spend')
       setAddress(addr)
       setStatus({ tone: 'ok', text: `Signed in · ${shorten(addr)}` })
-    })
-  }
-
-  function onDemo() {
-    run('Creating local demo wallet…', async () => {
-      const addr = createDemoAccount()
-      setAddress(addr)
-      setStatus({
-        tone: 'ok',
-        text: `Demo wallet ${shorten(addr)} — not Mera/PRF. Use for send testing only.`,
-      })
     })
   }
 
@@ -229,16 +213,30 @@ export default function Home() {
         ) : null}
       </header>
 
-      {!address ? (
+      {!hostOk ? (
+        <section className="panel anim-rise-delay flex flex-1 flex-col justify-center gap-5 p-6">
+          <div>
+            <h2 className="font-[family-name:var(--font-display)] text-2xl font-bold tracking-tight">
+              Open on localhost
+            </h2>
+            <p className="mt-2 text-sm text-[var(--mist)]">
+              WebAuthn rejects IP addresses like <span className="mono">127.0.0.1</span>. Passkeys only
+              work on a real hostname — use <span className="mono">localhost</span>.
+            </p>
+          </div>
+          <a className="primary-btn btn-pulse w-full text-center text-base no-underline" href={localUrl}>
+            Continue on localhost
+          </a>
+        </section>
+      ) : !address ? (
         <section className="panel anim-rise-delay flex flex-1 flex-col justify-center gap-5 p-6">
           <div>
             <h2 className="font-[family-name:var(--font-display)] text-2xl font-bold tracking-tight">
               One passkey. Real AUSD.
             </h2>
             <p className="mt-2 text-sm text-[var(--mist)]">
-              Mera derives your spend key from a PRF-capable passkey (fingerprint, Face ID, or password
-              manager). Local Chrome profile keys often lack PRF — prefer Google Password Manager or
-              1Password.
+              Mera derives your spend key from a Google Password Manager passkey (PRF). When Chrome asks
+              where to save it, pick Google Password Manager — not “this device”.
             </p>
           </div>
           <button type="button" className="primary-btn btn-pulse w-full text-base" disabled={pending} onClick={onCreate}>
@@ -246,9 +244,6 @@ export default function Home() {
           </button>
           <button type="button" className="ghost-btn w-full" disabled={pending} onClick={onSignIn}>
             I already have a passkey
-          </button>
-          <button type="button" className="ghost-btn w-full text-xs" disabled={pending} onClick={onDemo}>
-            Demo wallet (skip passkey)
           </button>
           {status ? (
             <p
@@ -265,9 +260,7 @@ export default function Home() {
           <section className="panel anim-rise-delay mb-4 p-5">
             <div className="flex items-end justify-between gap-3">
               <div>
-                <p className="text-xs uppercase tracking-[0.14em] text-[var(--mist)]">
-                  Balance{isDemoSession() ? ' · demo wallet' : ''}
-                </p>
+                <p className="text-xs uppercase tracking-[0.14em] text-[var(--mist)]">Balance</p>
                 <p className="mt-1 font-[family-name:var(--font-display)] text-4xl font-bold tracking-tight">
                   ${ausd}
                   <span className="ml-2 text-base font-semibold text-[var(--mint)]">AUSD</span>
