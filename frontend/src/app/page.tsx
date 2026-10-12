@@ -2,7 +2,14 @@
 
 import { useEffect, useState, useTransition } from 'react'
 import type { Hex } from 'viem'
-import { createAccount, signIn, signOut } from '@/lib/mera'
+import {
+  createAccount,
+  createDemoAccount,
+  isDemoSession,
+  restoreDemoAccount,
+  signIn,
+  signOut,
+} from '@/lib/mera'
 import { getAusdBalance, getMonBalance } from '@/lib/chain'
 import { displayHandle, handleCommit, normalizeHandle } from '@/lib/handles'
 import { registerHandle, requestAusdFaucet, sendToHandle } from '@/lib/payments'
@@ -43,6 +50,8 @@ export default function Home() {
     setActivity(loadActivity())
     const saved = localStorage.getItem('nonapay.myHandle')
     if (saved) setMyHandle(saved)
+    const demo = restoreDemoAccount()
+    if (demo) setAddress(demo)
   }, [])
 
   useEffect(() => {
@@ -89,18 +98,29 @@ export default function Home() {
   }
 
   function onCreate() {
-    run('Creating passkey…', async () => {
+    run('Creating passkey (needs WebAuthn PRF)…', async () => {
       const addr = await createAccount()
       setAddress(addr)
-      setStatus({ tone: 'ok', text: `Account ready · ${shorten(addr)}` })
+      setStatus({ tone: 'ok', text: `Passkey account ready · ${shorten(addr)}` })
     })
   }
 
   function onSignIn() {
-    run('Touch Face ID / passkey…', async () => {
+    run('Confirm fingerprint / passkey…', async () => {
       const addr = await signIn('spend')
       setAddress(addr)
       setStatus({ tone: 'ok', text: `Signed in · ${shorten(addr)}` })
+    })
+  }
+
+  function onDemo() {
+    run('Creating local demo wallet…', async () => {
+      const addr = createDemoAccount()
+      setAddress(addr)
+      setStatus({
+        tone: 'ok',
+        text: `Demo wallet ${shorten(addr)} — not Mera/PRF. Use for send testing only.`,
+      })
     })
   }
 
@@ -199,7 +219,7 @@ export default function Home() {
           <p className="chip mb-3">Monad Testnet · Agora AUSD · CRE</p>
           <h1 className="brand-word text-5xl font-extrabold leading-none sm:text-6xl">NonaPay</h1>
           <p className="mt-3 max-w-[18rem] text-sm leading-relaxed text-[var(--mist)]">
-            Face ID in. Send dollars to an @handle. CRE unlocks the escrow.
+            Passkey in. Send dollars to an @handle. CRE unlocks the escrow.
           </p>
         </div>
         {address ? (
@@ -216,17 +236,26 @@ export default function Home() {
               One passkey. Real AUSD.
             </h2>
             <p className="mt-2 text-sm text-[var(--mist)]">
-              Mera derives your spend key from Face ID / fingerprint. No seed phrase.
+              Mera derives your spend key from a PRF-capable passkey (fingerprint, Face ID, or password
+              manager). Local Chrome profile keys often lack PRF — prefer Google Password Manager or
+              1Password.
             </p>
           </div>
           <button type="button" className="primary-btn btn-pulse w-full text-base" disabled={pending} onClick={onCreate}>
-            Create with Face ID
+            Create passkey
           </button>
           <button type="button" className="ghost-btn w-full" disabled={pending} onClick={onSignIn}>
             I already have a passkey
           </button>
+          <button type="button" className="ghost-btn w-full text-xs" disabled={pending} onClick={onDemo}>
+            Demo wallet (skip passkey)
+          </button>
           {status ? (
-            <p className={`text-sm ${status.tone === 'err' ? 'status-err' : status.tone === 'ok' ? 'status-ok' : 'text-[var(--mist)]'}`}>
+            <p
+              className={`text-sm leading-relaxed ${
+                status.tone === 'err' ? 'status-err' : status.tone === 'ok' ? 'status-ok' : 'text-[var(--mist)]'
+              }`}
+            >
               {status.text}
             </p>
           ) : null}
@@ -236,7 +265,9 @@ export default function Home() {
           <section className="panel anim-rise-delay mb-4 p-5">
             <div className="flex items-end justify-between gap-3">
               <div>
-                <p className="text-xs uppercase tracking-[0.14em] text-[var(--mist)]">Balance</p>
+                <p className="text-xs uppercase tracking-[0.14em] text-[var(--mist)]">
+                  Balance{isDemoSession() ? ' · demo wallet' : ''}
+                </p>
                 <p className="mt-1 font-[family-name:var(--font-display)] text-4xl font-bold tracking-tight">
                   ${ausd}
                   <span className="ml-2 text-base font-semibold text-[var(--mint)]">AUSD</span>
