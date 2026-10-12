@@ -6,10 +6,8 @@
   "maxRiskScore": 80,
   "nullifierSaltId": "ENCLAVE_NULLIFIER_SALT",
   "fiatRelayTokenId": "FIAT_RELAY_AUTH_TOKEN",
-  "demoPaymentId": "0xad41b96c7ac5cf73b6b28db3124a332fd0e72c97cb192d66f2169aea13f841bb",
-  "demoRecipientCommit": "0xddc80da57d6f8ddd1b004601d2e5cd707d813ee99038c5f1debcd1d43d083976",
-  "demoPayer": "0x4092204b0E029b8f8d42dB17eF2cc9AE1aE96DBe",
-  "demoAmount": "200000000",
-  "schedule": "0 */5 * * * *",
+  "schedule": "0 */2 * * * *",
+  "lookbackBlocks": 90,
+  "maxSettlementsPerTick": 3,
   "enableLogTrigger": true
 }
