@@ -71,6 +71,13 @@ export const resolverAbi = [
     inputs: [{ name: 'handleHash', type: 'bytes32' }],
     outputs: [{ type: 'address' }],
   },
+  {
+    type: 'function',
+    name: 'ownerOf',
+    stateMutability: 'view',
+    inputs: [{ name: 'handleHash', type: 'bytes32' }],
+    outputs: [{ type: 'address' }],
+  },
 ] as const
 
 export const faucetAbi = [
