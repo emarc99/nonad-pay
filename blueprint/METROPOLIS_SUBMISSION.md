@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | Project details text | Ready below | Paste |
 | Logo | Artifact ready | Upload `/opt/cursor/artifacts/nonapay-logo-square.png` (or `frontend/public/nonapay-logo.png`) |
-| Live product HTTPS | Blocker | Deploy frontend (Vercel/Fly); point CRE `fiatRelayUrl` at that host’s `/api/fiat/attest` |
+| Live product HTTPS | Done | https://nonad-pay.vercel.app — CRE `fiatRelayUrl` pointed here; add Upstash Redis on Vercel for durable OTP/attest |
 | Demo video ≤3 min | Blocker | Record working product |
 | Pitch video ≤2 min | Blocker | Team + problem + why |
 | Bounty answers | Ready below | Paste + links |
@@ -187,7 +187,7 @@ Evidence: https://github.com/emarc99/nonad-pay/blob/main/frontend/src/lib/mera.t
 | Field | Value |
 | --- | --- |
 | GitHub | https://github.com/emarc99/nonad-pay |
-| Product | `https://YOUR-DEPLOY` (HTTPS, Monad Testnet) |
+| Product | https://nonad-pay.vercel.app |
 | Demo video | TBD |
 | Pitch video | TBD |
 | Explorer | https://testnet.monadexplorer.com |

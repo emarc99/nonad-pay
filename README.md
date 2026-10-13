@@ -51,6 +51,8 @@ Passkeys need `http://localhost` (or HTTPS) and a PRF-capable authenticator (Goo
 
 Set the same `FIAT_RELAY_AUTH_TOKEN` in repo `.env` and CRE vault. Point CRE `fiatRelayUrl` at a **public** `https://…/api/fiat/attest` (not localhost), then redeploy the workflow. Details: [`blueprint/FIAT_CRITERIA.md`](blueprint/FIAT_CRITERIA.md).
 
+**Live app:** [https://nonad-pay.vercel.app](https://nonad-pay.vercel.app) — on Vercel, add **Upstash Redis** (`UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN`) so OTP/attestations survive across serverless instances for CRE.
+
 ## CRE workflow
 
 Staging uses the **private** (Chainlink-hosted) registry — no Ethereum mainnet ETH / `LinkOwner`.
