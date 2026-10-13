@@ -63,6 +63,11 @@ export async function sendSandboxSms(params: {
       recipient?.status ||
       text.slice(0, 240) ||
       `HTTP ${res.status}`
+    if (res.status === 401 || /authentication is invalid/i.test(hint)) {
+      throw new Error(
+        `Africa's Talking auth invalid (401). Use the API key from the Sandbox app (username must be "sandbox"), not live. New keys can take up to ~20 minutes to activate — then retry.`,
+      )
+    }
     throw new Error(
       `Africa's Talking sandbox SMS failed: ${hint}. Open the simulator and register ${params.toE164}.`,
     )
