@@ -25,11 +25,13 @@ import {
 	type PaymentOpenedDecoded,
 } from '../contracts/evm/ts/generated/NonaGateway'
 import { NonaRegistry } from '../contracts/evm/ts/generated/NonaRegistry'
+import { verifyAttestation, type FiatAttestation } from './attestation'
 
 /**
- * NonaPay remittance CRE workflow.
- * - Log trigger on PaymentOpened (primary live path when DON delivers it)
- * - Cron polls recent PaymentOpened via filterLogs and settles unsettled ones (backup)
+ * NonaPay remittance CRE workflow — criteria engine for escrow release.
+ * - Log trigger on PaymentOpened (primary when DON delivers it)
+ * - Cron polls recent PaymentOpened via filterLogs (backup)
+ * - Off-chain +234 OTP → signed relay attestation; CRE verifies HMAC (fail-closed)
  */
 
 export const configSchema = z.object({
@@ -40,11 +42,18 @@ export const configSchema = z.object({
 	maxRiskScore: z.number().default(80),
 	nullifierSaltId: z.string().default('ENCLAVE_NULLIFIER_SALT'),
 	fiatRelayTokenId: z.string().default('FIAT_RELAY_AUTH_TOKEN'),
+	/**
+	 * Public HTTPS base for GET ?paymentId= (CRE cannot reach localhost).
+	 * Example: https://your-host/api/fiat/attest
+	 */
+	fiatRelayUrl: z.string().default(''),
 	/** Optional single-ID override for local simulate --broadcast only. */
 	demoPaymentId: z.string().optional(),
 	demoRecipientCommit: z.string().optional(),
 	demoPayer: z.string().optional(),
 	demoAmount: z.string().optional(),
+	/** Inline attestation JSON for local simulate when HTTP is unavailable. */
+	demoAttestationJson: z.string().optional(),
 	schedule: z.string().default('0 */1 * * * *'),
 	/** Recent blocks cron scans for PaymentOpened (keep under RPC range caps). */
 	lookbackBlocks: z.number().default(90),
@@ -62,9 +71,58 @@ type PaymentView = {
 	maxRiskScore: bigint
 }
 
-function mockFiatAttestation(paymentId: `0x${string}`, relayToken: string) {
-	const digest = keccak256(toBytes(`${paymentId}:${relayToken}:verified`))
-	return { verified: Boolean(digest), phoneHint: '+2348012345678', tier: 1 as const }
+function loadAttestation(
+	runtime: TeeRuntime<Config>,
+	paymentId: `0x${string}`,
+	relayToken: string,
+): FiatAttestation | undefined {
+	const config = runtime.config
+
+	if (
+		config.demoAttestationJson &&
+		config.demoPaymentId &&
+		config.demoPaymentId.toLowerCase() === paymentId.toLowerCase()
+	) {
+		try {
+			return JSON.parse(config.demoAttestationJson) as FiatAttestation
+		} catch {
+			runtime.log('demoAttestationJson parse failed')
+			return undefined
+		}
+	}
+
+	const base = (config.fiatRelayUrl || '').trim().replace(/\/$/, '')
+	if (!base) {
+		runtime.log('fiatRelayUrl empty — no attestation fetch')
+		return undefined
+	}
+
+	const url = `${base}?paymentId=${paymentId}`
+	try {
+		const response = new cre.capabilities.HTTPClient()
+			.sendRequest(runtime, {
+				url,
+				method: 'GET',
+				timeout: '10s',
+				cacheSettings: { store: false, maxAge: '0s' },
+				multiHeaders: {
+					Authorization: { values: [`Bearer ${relayToken}`] },
+					Accept: { values: ['application/json'] },
+					'Cache-Control': { values: ['no-store'] },
+				},
+			})
+			.result()
+
+		if (response.statusCode !== 200 || !response.body?.length) {
+			runtime.log(`fiat relay HTTP ${response.statusCode}`)
+			return undefined
+		}
+		const text = new TextDecoder().decode(response.body)
+		return JSON.parse(text) as FiatAttestation
+	} catch (e) {
+		runtime.log(`fiat relay fetch error: ${e instanceof Error ? e.message : 'unknown'}`)
+		return undefined
+	}
 }
 
 function settlePayment(runtime: TeeRuntime<Config>, payment: PaymentView): string {
@@ -85,20 +143,57 @@ function settlePayment(runtime: TeeRuntime<Config>, payment: PaymentView): strin
 		runtime.log('Demo fiat relay token fallback')
 	}
 
-	const fiat = mockFiatAttestation(payment.paymentId, relayToken)
-	const approved = fiat.verified && Number(payment.maxRiskScore) <= config.maxRiskScore
+	const nowSec = Math.floor(Date.now() / 1000)
+	const att = loadAttestation(runtime, payment.paymentId, relayToken)
+
+	// Missing / retryable criteria: do NOT writeReport (approved=false marks payment processed forever).
+	if (!att) {
+		runtime.log(`Criteria pending: no attestation yet for ${payment.paymentId}`)
+		return `pending attestation ${payment.paymentId}`
+	}
+	if (att.paymentId.toLowerCase() !== payment.paymentId.toLowerCase()) {
+		runtime.log('Criteria pending: attestation paymentId mismatch')
+		return `pending attestation mismatch ${payment.paymentId}`
+	}
+
+	const checked = verifyAttestation(relayToken, att, nowSec)
+	if (!checked.ok && checked.reason === 'expired') {
+		runtime.log('Criteria pending: attestation expired — re-attest after OTP')
+		return `pending attestation expired ${payment.paymentId}`
+	}
+
+	let phoneHint = att.phoneHint || 'unverified'
+	let tier = 0
+	let approved = false
+	let expiry = BigInt(nowSec + 3600)
+
+	if (!checked.ok) {
+		// Forged / malformed MAC — fail-closed reject on-chain
+		runtime.log(`Criteria rejected: ${checked.reason}`)
+	} else if (Number(payment.maxRiskScore) > config.maxRiskScore) {
+		runtime.log('Criteria rejected: maxRiskScore')
+		phoneHint = checked.phoneHint
+		tier = checked.tier
+		expiry = BigInt(checked.expiry)
+	} else {
+		phoneHint = checked.phoneHint
+		tier = checked.tier
+		expiry = BigInt(checked.expiry)
+		approved = true
+		runtime.log(`Criteria met: +234 OTP attestation for ${phoneHint}`)
+	}
+
 	const nullifier = keccak256(
 		toBytes(
-			`${fiat.phoneHint}:${config.gatewayAddress.toLowerCase()}:${salt}:${payment.paymentId}`,
+			`${phoneHint}:${config.gatewayAddress.toLowerCase()}:${salt}:${payment.paymentId}`,
 		),
 	)
-	const expiry = BigInt(Math.floor(Date.now() / 1000) + 3600)
 
 	const reportData = encodeAbiParameters(
 		parseAbiParameters(
 			'bytes32 paymentId, bytes32 nullifier, bytes32 recipientCommit, uint8 tier, uint64 expiry, bool approved',
 		),
-		[payment.paymentId, nullifier, payment.recipientCommit, fiat.tier, expiry, approved],
+		[payment.paymentId, nullifier, payment.recipientCommit, tier, expiry, approved],
 	)
 
 	runtime.log(

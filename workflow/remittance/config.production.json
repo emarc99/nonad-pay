@@ -5,5 +5,10 @@
   "gasLimit": "600000",
   "maxRiskScore": 80,
   "nullifierSaltId": "ENCLAVE_NULLIFIER_SALT",
-  "fiatRelayTokenId": "FIAT_RELAY_AUTH_TOKEN"
+  "fiatRelayTokenId": "FIAT_RELAY_AUTH_TOKEN",
+  "fiatRelayUrl": "",
+  "enableLogTrigger": true,
+  "schedule": "0 */2 * * * *",
+  "lookbackBlocks": 90,
+  "maxSettlementsPerTick": 3
 }

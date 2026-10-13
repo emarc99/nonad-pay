@@ -6,6 +6,7 @@
   "maxRiskScore": 80,
   "nullifierSaltId": "ENCLAVE_NULLIFIER_SALT",
   "fiatRelayTokenId": "FIAT_RELAY_AUTH_TOKEN",
+  "fiatRelayUrl": "",
   "schedule": "0 */2 * * * *",
   "lookbackBlocks": 90,
   "maxSettlementsPerTick": 3,
