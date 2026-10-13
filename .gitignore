@@ -38,6 +38,9 @@ contracts/broadcast/
 *.tsbuildinfo
 next-env.d.ts
 
+# local notes / submission drafts (keep on disk, not in git)
+blueprint/
+
 # agent scratch
 agent-tools/
 .cursor/

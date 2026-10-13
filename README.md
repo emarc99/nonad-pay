@@ -82,7 +82,6 @@ flowchart TB
 | `frontend/` | Next.js PWA — Mera, send keypad, OTP, `/pitch` deck |
 | `contracts/` | Foundry — Gateway, Escrow, Resolver, Registry |
 | `workflow/` | CRE remittance workflow (`nonapay-remittance-staging`) |
-| `blueprint/` | Specs, bounty matrix, submission paste pack |
 
 ---
 
