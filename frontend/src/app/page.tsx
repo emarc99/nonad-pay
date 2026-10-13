@@ -190,16 +190,14 @@ export default function Home() {
     if (!address) return
     run('Approving + opening payment…', async () => {
       const session = phoneSession ?? loadPhoneSession()
-      if (!session || session.address !== address.toLowerCase()) {
-        throw new Error(
-          'This passkey has no verified +234 yet. On Me: Send OTP → Verify, then Pay. (OTP is per passkey — Alice and emarc99 each need their own.)',
-        )
-      }
+      const sessionOk = Boolean(session && session.address === address.toLowerCase())
       const { hash, commit, paymentId } = await sendToHandle(handle, amount)
       let list = pushActivity({
         kind: 'send',
         title: `Sent $${amount} to ${displayHandle(handle)}`,
-        detail: `commit ${commit.slice(0, 10)}… · escrow locked until CRE criteria`,
+        detail: sessionOk
+          ? `commit ${commit.slice(0, 10)}… · escrow locked until CRE criteria`
+          : `commit ${commit.slice(0, 10)}… · no +234 on this passkey — CRE will not release`,
         hash,
       })
       if (!paymentId) {
@@ -213,6 +211,21 @@ export default function Home() {
         await refreshBalances(address)
         return
       }
+
+      // Soft gate: allow escrow without OTP so CRE is the load-bearing criteria.
+      // No session → skip attest → CRE GET 404 → pending (no writeReport) → 15m reclaim.
+      if (!sessionOk || !session) {
+        setActivity(list)
+        setStatus({
+          tone: 'err',
+          text: 'Locked — CRE waiting on +234 (reclaim in 15m). This passkey has no verified OTP yet; Me → Send OTP → Verify, then pay again to release.',
+          hash,
+        })
+        setAmount('0')
+        await refreshBalances(address)
+        return
+      }
+
       await postAttestation({
         paymentId,
         address,
@@ -485,7 +498,9 @@ export default function Home() {
                 {phoneSession ? (
                   <p className="mt-1 text-xs text-[var(--mint)]">Payer phone {phoneSession.phone}</p>
                 ) : (
-                  <p className="mt-1 text-xs text-[var(--mist)]">Verify +234 on Me before paying</p>
+                  <p className="mt-1 text-xs text-[var(--mist)]">
+                    No +234 on this passkey — you can still Pay; CRE won&apos;t release (15m reclaim)
+                  </p>
                 )}
               </div>
 
