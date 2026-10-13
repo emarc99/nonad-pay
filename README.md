@@ -28,7 +28,7 @@ flowchart LR
     UI[Next.js app]
   end
 
-  subgraph Monad["Monad Testnet"]
+  subgraph Monad[Monad Testnet]
     GW[NonaGateway]
     ESC[P2PEscrow]
     RES[PhoneResolver]
@@ -36,16 +36,16 @@ flowchart LR
   end
 
   subgraph Offchain
-    OTP["+234 OTP<br/>AT / Termii / mock"]
-    RELAY["Fiat relay<br/>/api/fiat/attest"]
+    OTP[NG OTP relay]
+    RELAY[Fiat attest API]
     KV[(Upstash Redis)]
   end
 
-  subgraph CRE["Chainlink CRE TEE"]
-    LOG[PaymentOpened log trigger]
+  subgraph CRE[Chainlink CRE TEE]
+    LOG[PaymentOpened log]
     CRON[Cron filterLogs]
-    TEE[HMAC verify + nullifier]
-    WR[evm.writeReport]
+    TEE[HMAC verify]
+    WR[writeReport]
   end
 
   PK --> UI
@@ -58,11 +58,11 @@ flowchart LR
   UI -->|POST attest| RELAY
   LOG --> TEE
   CRON --> TEE
-  TEE -->|GET attest + Vault secrets| RELAY
+  TEE -->|GET attest| RELAY
   TEE --> WR
   WR --> REG
   REG -->|release| ESC
-  RES -->|@handle → address| REG
+  RES -->|resolve handle| REG
 ```
 
 ### Settlement path
@@ -143,13 +143,4 @@ Staging uses the **private** registry. Live name: `nonapay-remittance-staging`.
 
 ---
 
-## Network policy
-
-v1 is **Monad Testnet only**. Mainnet waits on green e2e + explicit go-ahead.
-
-## Docs
-
-- [`blueprint/FIAT_CRITERIA.md`](blueprint/FIAT_CRITERIA.md) — OTP → relay → CRE  
-- [`blueprint/CHAINLINK_CRE_SPEC.md`](blueprint/CHAINLINK_CRE_SPEC.md) — anti-AquaGhost rules  
-- [`blueprint/METROPOLIS_SUBMISSION.md`](blueprint/METROPOLIS_SUBMISSION.md) — hackathon paste pack  
-- Pitch UI: `/pitch`
+> We built NonaPay for Metropolis to prove remittances can feel like Cash App while settlement stays honest: Agora AUSD on Monad, Mera passkeys for humans, and Chainlink CRE as the real criteria engine — not a fake watcher — with a 15-minute reclaim if the world goes quiet.
