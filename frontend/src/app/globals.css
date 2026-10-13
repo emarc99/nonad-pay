@@ -242,3 +242,58 @@ body::before {
 .mono {
   font-family: var(--font-mono), ui-monospace, monospace;
 }
+
+/* Pitch deck */
+.pitch-root {
+  background:
+    radial-gradient(900px 500px at 0% 0%, rgba(61, 220, 151, 0.16), transparent 55%),
+    radial-gradient(700px 400px at 100% 80%, rgba(15, 60, 50, 0.55), transparent 50%),
+    linear-gradient(160deg, #04120e 0%, #0c2420 50%, #061410 100%);
+}
+
+.pitch-root::-webkit-scrollbar,
+.pitch-root *::-webkit-scrollbar {
+  display: none;
+}
+
+.pitch-panel {
+  opacity: 0.55;
+  transform: translateY(12px) scale(0.985);
+  transition:
+    opacity 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.pitch-panel-active {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+@keyframes pitch-line {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+.pitch-slide::after {
+  content: "";
+  position: absolute;
+  left: 1.5rem;
+  right: 1.5rem;
+  bottom: 4.5rem;
+  height: 1px;
+  origin: left;
+  background: linear-gradient(90deg, var(--mint), transparent);
+  transform-origin: left;
+  animation: pitch-line 0.8s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (min-width: 640px) {
+  .pitch-slide::after {
+    left: 4rem;
+    right: 4rem;
+  }
+}

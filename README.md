@@ -1,78 +1,155 @@
 # NonaPay
 
-Cash App for cross-border AUSD on **Monad Testnet**. Mera passkey onboarding, `@handle` / `+234` sends, dual-exit escrow, Chainlink CRE as **criteria engine** (`+234` OTP → HMAC relay → `writeReport`).
+**Cash App for AUSD remittances on Monad.**  
+Passkey in → send to `@handles` / `+234` → dual-exit escrow → Chainlink CRE unlocks on OTP criteria.
 
-## What's in the repo
+| | |
+| --- | --- |
+| **Live** | [https://nonad-pay.vercel.app](https://nonad-pay.vercel.app) |
+| **Pitch deck** | [https://nonad-pay.vercel.app/pitch](https://nonad-pay.vercel.app/pitch) |
+| **Repo** | [github.com/emarc99/nonad-pay](https://github.com/emarc99/nonad-pay) |
+| **Network** | Monad Testnet |
+| **Track** | Metropolis · Consumer Products & Payments |
+
+---
+
+## Why it exists
+
+Remittances still force seed phrases, `0x` addresses, and trust-me watchers. NonaPay keeps the UX invisible-chain (Mera passkeys + `@handles`) while settlement is **programmable**: Agora AUSD locks in escrow until a CRE confidential workflow verifies a `+234` OTP attestation. If CRE never releases, the payer **reclaims in 15 minutes**.
+
+---
+
+## Architecture
+
+```mermaid
+flowchart LR
+  subgraph User
+    PK[Mera passkey]
+    UI[Next.js app]
+  end
+
+  subgraph Monad["Monad Testnet"]
+    GW[NonaGateway]
+    ESC[P2PEscrow]
+    RES[PhoneResolver]
+    REG[NonaRegistry]
+  end
+
+  subgraph Offchain
+    OTP["+234 OTP<br/>AT / Termii / mock"]
+    RELAY["Fiat relay<br/>/api/fiat/attest"]
+    KV[(Upstash Redis)]
+  end
+
+  subgraph CRE["Chainlink CRE TEE"]
+    LOG[PaymentOpened log trigger]
+    CRON[Cron filterLogs]
+    TEE[HMAC verify + nullifier]
+    WR[evm.writeReport]
+  end
+
+  PK --> UI
+  UI -->|openPayment| GW
+  GW -->|lock AUSD| ESC
+  GW -->|PaymentOpened| LOG
+  UI -->|OTP verify| OTP
+  OTP --> RELAY
+  RELAY --> KV
+  UI -->|POST attest| RELAY
+  LOG --> TEE
+  CRON --> TEE
+  TEE -->|GET attest + Vault secrets| RELAY
+  TEE --> WR
+  WR --> REG
+  REG -->|release| ESC
+  RES -->|@handle → address| REG
+```
+
+### Settlement path
+
+1. **Pay** — passkey signs `openPayment`; AUSD locks in `P2PEscrow`; `PaymentOpened` emits.  
+2. **Attest** — after `+234` OTP, app posts HMAC-signed attestation to the public relay (stored in Upstash on Vercel).  
+3. **CRE** — log trigger (cron backup) loads Vault secrets, GETs attest, verifies HMAC in TEE.  
+4. **Release or not** — `writeReport` → `NonaRegistry.onReport` releases on `approved=true`; missing attest skips write (pending); forged MAC → `RejectedReport`; silence → **15m reclaim**.
+
+### Repo layout
 
 | Path | Role |
 | --- | --- |
-| `contracts/` | Foundry — Gateway, P2PEscrow, PhoneResolver, NonaRegistry, MockAUSD |
-| `workflow/` | CRE confidential remittance workflow (TEE + `writeReport`) |
-| `frontend/` | Next.js PWA — Mera passkeys, send keypad, @handles |
-| `blueprint/` | Specs, bounty must/maybe/cut matrix |
+| `frontend/` | Next.js PWA — Mera, send keypad, OTP, `/pitch` deck |
+| `contracts/` | Foundry — Gateway, Escrow, Resolver, Registry |
+| `workflow/` | CRE remittance workflow (`nonapay-remittance-staging`) |
+| `blueprint/` | Specs, bounty matrix, submission paste pack |
+
+---
 
 ## Monad Testnet deployments
 
 | Contract | Address |
 | --- | --- |
-| AUSD | `0xa9012a055bd4e0eDfF8Ce09f960291C09D5322dC` |
+| AUSD | [`0xa9012a055bd4e0eDfF8Ce09f960291C09D5322dC`](https://testnet.monadexplorer.com/address/0xa9012a055bd4e0eDfF8Ce09f960291C09D5322dC) |
 | AUSD faucet | `0xd236c18D274E54FAccC3dd9DDA4b27965a73ee6C` |
 | NonaGateway | `0x421dCd87dc70d07589CA51200bf5Ec6065C12b8c` |
 | P2PEscrow | `0x6C33f144264a480B3bd414Db39127deC91A3b69D` |
 | PhoneResolver | `0x3953E210A6F81BBe5d9cAA0BD2Cc89dED255f95E` |
 | NonaRegistry | `0x9693aAd2540D75057D0CDce4c16891230D335A6B` |
+| Keystone forwarder | `0xF8344CFd5c43616a4366C34E3EEE75af79a74482` |
 
-Explorer: https://testnet.monadexplorer.com
+Explorer: [testnet.monadexplorer.com](https://testnet.monadexplorer.com)
 
-## Quick start
+---
+
+## Quick start (local)
 
 ```bash
-# secrets (never commit)
 cp .env.example .env
-# fill PRIVATE_KEY (fresh testnet key) + CRE_API_KEY
+# PRIVATE_KEY, FIAT_RELAY_AUTH_TOKEN, optional AFRICASTALKING_* / CRE_*
 
-# contracts
 cd contracts && forge test
 
-# frontend
-cd frontend && npm install && npm run dev
-# → http://localhost:43127   (use localhost — NOT 127.0.0.1; WebAuthn rejects IP RP IDs)
+cd ../frontend && npm install && npm run dev
+# → http://localhost:43127  (hostname must be localhost for WebAuthn — not 127.0.0.1)
 ```
 
-Passkeys need `http://localhost` (or HTTPS) and a PRF-capable authenticator (Google Password Manager).
+Passkeys need a PRF-capable authenticator (e.g. Google Password Manager).  
+In-app drip funds `MON` + AUSD from the deployer key (local/demo only).
 
-**Get test funds** in the app drips `0.2 MON` + `25 AUSD` from the deployer key in repo-root `.env` (local demo only). Or use the Monad faucet for MON and Agora `requestFunds` for AUSD.
+### Fiat criteria (+234)
 
-## Fiat criteria (+234 OTP)
+1. **Me** → `+234…` → Send OTP → Verify  
+2. **Send** → `@alice` or `+234…` → app posts attestation  
+3. CRE releases only if HMAC verifies  
 
-1. **Me** → enter `+234…` → Send OTP (Termii, or mock `demoPin` if `TERMII_API_KEY` unset) → Verify  
-2. **Send** → pay `@alice` or `+234…` → app posts signed attestation for `paymentId`  
-3. CRE fetches attestation over HTTPS and releases only if HMAC verifies  
+On **Vercel**, set `FIAT_RELAY_AUTH_TOKEN` and Upstash (`KV_REST_API_URL` / `KV_REST_API_TOKEN` or `UPSTASH_REDIS_REST_*`) so OTP/attest survive serverless. Point CRE `fiatRelayUrl` at:
 
-Set the same `FIAT_RELAY_AUTH_TOKEN` in repo `.env` and CRE vault. Point CRE `fiatRelayUrl` at a **public** `https://…/api/fiat/attest` (not localhost), then redeploy the workflow. Details: [`blueprint/FIAT_CRITERIA.md`](blueprint/FIAT_CRITERIA.md).
+`https://nonad-pay.vercel.app/api/fiat/attest`
 
-**Live app:** [https://nonad-pay.vercel.app](https://nonad-pay.vercel.app) — on Vercel, add **Upstash Redis** (`UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN`) so OTP/attestations survive across serverless instances for CRE.
-
-## CRE workflow
-
-Staging uses the **private** (Chainlink-hosted) registry — no Ethereum mainnet ETH / `LinkOwner`.
+### CRE workflow
 
 ```bash
 cd workflow
-# CRE_API_KEY in workflow/.env (cre login / API key)
-# Set fiatRelayUrl in remittance/config.staging.json to your public attest URL
-cre workflow deploy remittance --target staging-settings --yes --non-interactive
-
-# Local settle proof (uses MockKeystone — temporarily setForwarder to Mock if registry is on Keystone):
-cre workflow simulate remittance --target staging-settings --broadcast --non-interactive --trigger-index 0
+# Vault secrets: cre secrets create secrets.yaml --secrets-auth=browser --yes
+cre workflow deploy remittance --target staging-settings --yes
 ```
 
-Live deploy: `nonapay-remittance-staging` on private registry. `NonaRegistry` forwarder is Keystone (`0xF834…`) for DON writes; MockKeystone (`0xB9F79…`) is only for local `simulate --broadcast`.
+Staging uses the **private** registry. Live name: `nonapay-remittance-staging`.
 
-## Handle commitment
+### Handles
 
-UI `@amina` → `keccak256("handle:amina")`. Phone `+2348012345678` → `keccak256("handle:2348012345678")`.
+| Input | Commitment |
+| --- | --- |
+| `@amina` | `keccak256("handle:amina")` |
+| `+2348012345678` | `keccak256("handle:2348012345678")` |
+
+---
 
 ## Network policy
 
-v1 is **Monad Testnet only**. Mainnet is out of scope until testnet e2e is green and explicitly approved.
+v1 is **Monad Testnet only**. Mainnet waits on green e2e + explicit go-ahead.
+
+## Docs
+
+- [`blueprint/FIAT_CRITERIA.md`](blueprint/FIAT_CRITERIA.md) — OTP → relay → CRE  
+- [`blueprint/CHAINLINK_CRE_SPEC.md`](blueprint/CHAINLINK_CRE_SPEC.md) — anti-AquaGhost rules  
+- [`blueprint/METROPOLIS_SUBMISSION.md`](blueprint/METROPOLIS_SUBMISSION.md) — hackathon paste pack  
+- Pitch UI: `/pitch`

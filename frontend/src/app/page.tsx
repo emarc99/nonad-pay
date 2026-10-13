@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useEffect, useState, useTransition } from 'react'
 import type { Hex } from 'viem'
 import { createAccount, localhostUrl, passkeyHostOk, signIn, signOut } from '@/lib/mera'
@@ -663,6 +664,10 @@ export default function Home() {
 
       <footer className="mt-8 text-center text-[11px] text-[var(--mist)]">
         Dual-exit escrow · CRE writeReport · Mera PRF keys
+        {' · '}
+        <Link href="/pitch" className="text-[var(--mint)] underline-offset-2 hover:underline">
+          Pitch
+        </Link>
       </footer>
     </div>
   )
