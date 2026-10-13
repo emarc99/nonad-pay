@@ -8,7 +8,7 @@
   "fiatRelayTokenId": "FIAT_RELAY_AUTH_TOKEN",
   "fiatRelayUrl": "https://retrieve-workout-sensitivity-reason.trycloudflare.com/api/fiat/attest",
   "schedule": "0 */2 * * * *",
-  "lookbackBlocks": 90,
+  "lookbackBlocks": 50000,
   "maxSettlementsPerTick": 3,
   "enableLogTrigger": true
 }
