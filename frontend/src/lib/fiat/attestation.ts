@@ -76,7 +76,8 @@ export function verifyAttestation(
 
 export function relaySecret(): string {
   const s = process.env.FIAT_RELAY_AUTH_TOKEN?.trim()
-  if (s) return s
-  // Local/demo only — CRE vault should override in live DON
-  return 'nonapay-demo-fiat-relay'
+  if (!s) {
+    throw new Error('FIAT_RELAY_AUTH_TOKEN unset — refuse to sign or serve attestations')
+  }
+  return s
 }

@@ -14,8 +14,8 @@ CRE is the **payout-on-criteria** engine: AUSD stays in escrow until an off-chai
 7. TEE verifies HMAC; only then approved=true → writeReport → release
 ```
 
-Missing / expired attestation → CRE **skips** `writeReport` (retry via cron).  
-Forged MAC → `approved=false` (fail-closed reject).
+Missing (HTTP 404) / expired attestation → CRE **skips** `writeReport` (retry via cron).  
+Missing vault secrets, empty `fiatRelayUrl`, HTTP 401/5xx, or forged MAC → **fail** (no demo secret / inline-attest fallback).
 
 ## Nigeria phone send
 

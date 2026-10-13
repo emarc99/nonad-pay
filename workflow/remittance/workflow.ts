@@ -47,13 +47,11 @@ export const configSchema = z.object({
 	 * Example: https://your-host/api/fiat/attest
 	 */
 	fiatRelayUrl: z.string().default(''),
-	/** Optional single-ID override for local simulate --broadcast only. */
+	/** Optional single-ID override for local simulate --broadcast only (still requires real HTTP attest + vault secrets). */
 	demoPaymentId: z.string().optional(),
 	demoRecipientCommit: z.string().optional(),
 	demoPayer: z.string().optional(),
 	demoAmount: z.string().optional(),
-	/** Inline attestation JSON for local simulate when HTTP is unavailable. */
-	demoAttestationJson: z.string().optional(),
 	schedule: z.string().default('0 */1 * * * *'),
 	/** Recent blocks cron scans for PaymentOpened (keep under RPC range caps). */
 	lookbackBlocks: z.number().default(90),
@@ -71,77 +69,60 @@ type PaymentView = {
 	maxRiskScore: bigint
 }
 
+function requireSecret(runtime: TeeRuntime<Config>, id: string, label: string): string {
+	try {
+		const secret = runtime.getSecret({ id }).result()
+		const value = secret?.value != null ? String(secret.value).trim() : ''
+		if (!value) throw new Error('empty')
+		return value
+	} catch {
+		throw new Error(`${label} secret missing or empty (${id}) — refuse to settle`)
+	}
+}
+
 function loadAttestation(
 	runtime: TeeRuntime<Config>,
 	paymentId: `0x${string}`,
 	relayToken: string,
 ): FiatAttestation | undefined {
 	const config = runtime.config
-
-	if (
-		config.demoAttestationJson &&
-		config.demoPaymentId &&
-		config.demoPaymentId.toLowerCase() === paymentId.toLowerCase()
-	) {
-		try {
-			return JSON.parse(config.demoAttestationJson) as FiatAttestation
-		} catch {
-			runtime.log('demoAttestationJson parse failed')
-			return undefined
-		}
-	}
-
 	const base = (config.fiatRelayUrl || '').trim().replace(/\/$/, '')
 	if (!base) {
-		runtime.log('fiatRelayUrl empty — no attestation fetch')
-		return undefined
+		throw new Error('fiatRelayUrl empty — refuse to settle without HTTP attestation')
 	}
 
 	const url = `${base}?paymentId=${paymentId}`
-	try {
-		const response = new cre.capabilities.HTTPClient()
-			.sendRequest(runtime, {
-				url,
-				method: 'GET',
-				timeout: '10s',
-				cacheSettings: { store: false, maxAge: '0s' },
-				multiHeaders: {
-					Authorization: { values: [`Bearer ${relayToken}`] },
-					Accept: { values: ['application/json'] },
-					'Cache-Control': { values: ['no-store'] },
-				},
-			})
-			.result()
+	const response = new cre.capabilities.HTTPClient()
+		.sendRequest(runtime, {
+			url,
+			method: 'GET',
+			timeout: '10s',
+			cacheSettings: { store: false, maxAge: '0s' },
+			multiHeaders: {
+				Authorization: { values: [`Bearer ${relayToken}`] },
+				Accept: { values: ['application/json'] },
+				'Cache-Control': { values: ['no-store'] },
+			},
+		})
+		.result()
 
-		if (response.statusCode !== 200 || !response.body?.length) {
-			runtime.log(`fiat relay HTTP ${response.statusCode}`)
-			return undefined
-		}
-		const text = new TextDecoder().decode(response.body)
-		return JSON.parse(text) as FiatAttestation
-	} catch (e) {
-		runtime.log(`fiat relay fetch error: ${e instanceof Error ? e.message : 'unknown'}`)
+	// Only "not posted yet" is soft-pending; auth/5xx/empty must fail the execution.
+	if (response.statusCode === 404) {
+		runtime.log('fiat relay HTTP 404 — attestation not posted yet')
 		return undefined
 	}
+	if (response.statusCode !== 200 || !response.body?.length) {
+		throw new Error(`fiat relay HTTP ${response.statusCode} — refuse to settle`)
+	}
+	const text = new TextDecoder().decode(response.body)
+	return JSON.parse(text) as FiatAttestation
 }
 
 function settlePayment(runtime: TeeRuntime<Config>, payment: PaymentView): string {
 	const config = runtime.config
 
-	let salt = 'nonapay-demo-nullifier-salt'
-	let relayToken = 'nonapay-demo-fiat-relay'
-	try {
-		const saltSecret = runtime.getSecret({ id: config.nullifierSaltId }).result()
-		if (saltSecret?.value) salt = String(saltSecret.value)
-	} catch {
-		runtime.log('Demo salt fallback')
-	}
-	try {
-		const relaySecret = runtime.getSecret({ id: config.fiatRelayTokenId }).result()
-		if (relaySecret?.value) relayToken = String(relaySecret.value)
-	} catch {
-		runtime.log('Demo fiat relay token fallback')
-	}
+	const salt = requireSecret(runtime, config.nullifierSaltId, 'Nullifier salt')
+	const relayToken = requireSecret(runtime, config.fiatRelayTokenId, 'Fiat relay auth token')
 
 	const nowSec = Math.floor(Date.now() / 1000)
 	const att = loadAttestation(runtime, payment.paymentId, relayToken)
