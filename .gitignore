@@ -42,6 +42,9 @@ next-env.d.ts
 agent-tools/
 .cursor/
 
+# local fiat OTP / attestation store
+frontend/.data/
+
 # CRE / workflow
 workflow/.env
 workflow/**/node_modules/

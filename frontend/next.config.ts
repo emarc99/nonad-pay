@@ -13,7 +13,14 @@ function loadRootEnv() {
       const key = line.slice(0, i).trim()
       const value = line.slice(i + 1).trim()
       if (!key || process.env[key]) continue
-      if (key === 'PRIVATE_KEY' || key === 'MONAD_RPC_URL') {
+      if (
+        key === 'PRIVATE_KEY' ||
+        key === 'MONAD_RPC_URL' ||
+        key === 'FIAT_RELAY_AUTH_TOKEN' ||
+        key === 'TERMII_API_KEY' ||
+        key === 'TERMII_SENDER_ID' ||
+        key === 'TERMII_BASE_URL'
+      ) {
         process.env[key] = value
       }
     }
