@@ -8,6 +8,13 @@ import { displayHandle, handleCommit, normalizeHandle } from '@/lib/handles'
 import { registerHandle, requestAusdFaucet, sendToHandle } from '@/lib/payments'
 import { loadActivity, pushActivity, type ActivityItem } from '@/lib/activity'
 import { linkMyHandle, loadStoredMyHandle, saveMyHandle, syncStoredMyHandle } from '@/lib/myHandle'
+import {
+  loadPhoneSession,
+  postAttestation,
+  requestOtp,
+  verifyOtp,
+  type PhoneSessionLocal,
+} from '@/lib/fiat/client'
 
 type Tab = 'send' | 'me' | 'activity'
 
@@ -67,6 +74,11 @@ export default function Home() {
   const [pending, startTransition] = useTransition()
   const [hostOk, setHostOk] = useState(true)
   const [localUrl, setLocalUrl] = useState('http://localhost:43127')
+  const [phoneInput, setPhoneInput] = useState('')
+  const [otpPin, setOtpPin] = useState('')
+  const [otpPinId, setOtpPinId] = useState('')
+  const [phoneSession, setPhoneSession] = useState<PhoneSessionLocal | null>(null)
+  const [demoPin, setDemoPin] = useState<string | undefined>()
 
   async function refreshBalances(addr: Hex) {
     const [a, m] = await Promise.all([getAusdBalance(addr), getMonBalance(addr)])
@@ -78,6 +90,11 @@ export default function Home() {
     setActivity(loadActivity())
     const saved = loadStoredMyHandle()
     if (saved) setMyHandle(saved)
+    const session = loadPhoneSession()
+    if (session) {
+      setPhoneSession(session)
+      setPhoneInput(session.phone)
+    }
     setHostOk(passkeyHostOk())
     setLocalUrl(localhostUrl())
   }, [])
@@ -88,6 +105,9 @@ export default function Home() {
     void syncStoredMyHandle(address)
       .then((linked) => setMyHandle(linked))
       .catch(() => undefined)
+    const session = loadPhoneSession()
+    if (session && session.address === address.toLowerCase()) setPhoneSession(session)
+    else setPhoneSession(null)
     const id = setInterval(() => {
       void refreshBalances(address).catch(() => undefined)
     }, 12_000)
@@ -169,17 +189,87 @@ export default function Home() {
   function onSend() {
     if (!address) return
     run('Approving + opening payment…', async () => {
-      const { hash, commit } = await sendToHandle(handle, amount)
-      const list = pushActivity({
+      const session = phoneSession ?? loadPhoneSession()
+      if (!session || session.address !== address.toLowerCase()) {
+        throw new Error('Verify your +234 phone on My @ first — CRE releases only after OTP attestation.')
+      }
+      const { hash, commit, paymentId } = await sendToHandle(handle, amount)
+      let list = pushActivity({
         kind: 'send',
         title: `Sent $${amount} to ${displayHandle(handle)}`,
-        detail: `commit ${commit.slice(0, 10)}…`,
+        detail: `commit ${commit.slice(0, 10)}… · escrow locked until CRE criteria`,
+        hash,
+      })
+      if (!paymentId) {
+        setActivity(list)
+        setStatus({
+          tone: 'err',
+          text: 'Payment opened but paymentId missing from logs — attest manually failed',
+          hash,
+        })
+        setAmount('0')
+        await refreshBalances(address)
+        return
+      }
+      await postAttestation({
+        paymentId,
+        address,
+        sessionToken: session.sessionToken,
+      })
+      list = pushActivity({
+        kind: 'attest',
+        title: `Attested ${session.phone}`,
+        detail: `payment ${paymentId.slice(0, 10)}… · CRE may release`,
         hash,
       })
       setActivity(list)
-      setStatus({ tone: 'ok', text: 'Payment opened', hash })
+      setStatus({
+        tone: 'ok',
+        text: 'Payment opened + phone attestation posted (CRE criteria)',
+        hash,
+      })
       setAmount('0')
       await refreshBalances(address)
+    })
+  }
+
+  function onRequestOtp() {
+    if (!address) return
+    run('Sending +234 OTP…', async () => {
+      const data = await requestOtp(address, phoneInput)
+      setOtpPinId(data.pinId)
+      setDemoPin(data.demoPin)
+      if (data.demoPin) setOtpPin(data.demoPin)
+      setPhoneInput(data.phone)
+      const list = pushActivity({
+        kind: 'otp',
+        title: data.mock ? `Mock OTP → ${data.phone}` : `OTP sent → ${data.phone}`,
+        detail: data.mock ? `demo code ${data.demoPin}` : 'Enter the SMS code',
+      })
+      setActivity(list)
+      setStatus({
+        tone: 'ok',
+        text: data.mock
+          ? `Mock OTP ready (${data.demoPin}) — no TERMII_API_KEY`
+          : `Code sent to ${data.phone}`,
+      })
+    })
+  }
+
+  function onVerifyOtp() {
+    if (!address || !otpPinId) return
+    run('Verifying OTP…', async () => {
+      const session = await verifyOtp(address, otpPinId, otpPin)
+      setPhoneSession(session)
+      setOtpPin('')
+      setDemoPin(undefined)
+      const list = pushActivity({
+        kind: 'otp',
+        title: `Verified ${session.phone}`,
+        detail: 'Session ready — send will post attestation for CRE',
+      })
+      setActivity(list)
+      setStatus({ tone: 'ok', text: `${session.phone} verified · criteria unlocked for sends` })
     })
   }
 
@@ -350,7 +440,7 @@ export default function Home() {
           <nav className="mb-4 grid grid-cols-3 gap-1 rounded-full border border-white/10 bg-black/20 p-1 text-sm font-semibold">
             {([
               ['send', 'Send'],
-              ['me', 'My @'],
+              ['me', 'Me'],
               ['activity', 'Activity'],
             ] as const).map(([id, label]) => (
               <button
@@ -376,7 +466,14 @@ export default function Home() {
                   <span className="text-[var(--mist)]">$</span>
                   {amount}
                 </p>
-                <p className="mt-1 text-xs text-[var(--mist)]">Locks in dual-exit escrow · 15m reclaim</p>
+                <p className="mt-1 text-xs text-[var(--mist)]">
+                  Escrow locks until CRE criteria (+234 OTP attestation) · 15m reclaim
+                </p>
+                {phoneSession ? (
+                  <p className="mt-1 text-xs text-[var(--mint)]">Payer phone {phoneSession.phone}</p>
+                ) : (
+                  <p className="mt-1 text-xs text-[var(--mist)]">Verify +234 on Me before paying</p>
+                )}
               </div>
 
               <label className="mt-4 block text-xs font-semibold uppercase tracking-[0.12em] text-[var(--mist)]">
@@ -384,7 +481,7 @@ export default function Home() {
               </label>
               <input
                 className="field mt-2"
-                placeholder="@amina"
+                placeholder="@alice or +2348012345678"
                 value={handle}
                 onChange={(e) => setHandle(e.target.value)}
                 autoCapitalize="none"
@@ -413,15 +510,60 @@ export default function Home() {
           {tab === 'me' ? (
             <section className="panel flex flex-1 flex-col gap-4 p-5">
               <div>
-                <h2 className="font-[family-name:var(--font-display)] text-2xl font-bold">Your @</h2>
+                <h2 className="font-[family-name:var(--font-display)] text-2xl font-bold">+234 phone</h2>
                 <p className="mt-2 text-sm text-[var(--mist)]">
-                  Register a new name, or Link one you already own on another device. Ownership is
-                  checked on-chain via PhoneResolver.
+                  Termii OTP proves your number. After each pay, we post a signed attestation; CRE
+                  releases escrow only when that HMAC verifies (webhook-gated criteria).
                 </p>
               </div>
               <input
                 className="field"
-                placeholder="@yourname"
+                placeholder="+2348012345678"
+                value={phoneInput}
+                onChange={(e) => setPhoneInput(e.target.value)}
+                inputMode="tel"
+                autoCapitalize="none"
+              />
+              <button
+                type="button"
+                className="primary-btn w-full"
+                disabled={pending || phoneInput.trim().length < 10}
+                onClick={onRequestOtp}
+              >
+                Send OTP
+              </button>
+              {otpPinId ? (
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <input
+                    className="field"
+                    placeholder={demoPin ? `Code (${demoPin})` : 'SMS code'}
+                    value={otpPin}
+                    onChange={(e) => setOtpPin(e.target.value)}
+                    inputMode="numeric"
+                  />
+                  <button
+                    type="button"
+                    className="primary-btn w-full sm:w-auto sm:px-6"
+                    disabled={pending || otpPin.trim().length < 4}
+                    onClick={onVerifyOtp}
+                  >
+                    Verify
+                  </button>
+                </div>
+              ) : null}
+              {phoneSession ? (
+                <p className="text-sm text-[var(--mint)]">Verified {phoneSession.phone}</p>
+              ) : null}
+
+              <div className="mt-2 border-t border-white/10 pt-4">
+                <h3 className="font-[family-name:var(--font-display)] text-xl font-bold">Your @</h3>
+                <p className="mt-2 text-sm text-[var(--mist)]">
+                  Register a name or +234 (as handle), or Link one you already own on another device.
+                </p>
+              </div>
+              <input
+                className="field"
+                placeholder="@alice or +234…"
                 value={myHandle}
                 onChange={(e) => setMyHandle(e.target.value)}
                 autoCapitalize="none"

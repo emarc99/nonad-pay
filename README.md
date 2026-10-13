@@ -1,6 +1,6 @@
 # NonaPay
 
-Cash App for cross-border AUSD on **Monad Testnet**. Mera Face ID onboarding, opaque `@handle` commits, dual-exit escrow, Chainlink CRE `writeReport` settlement.
+Cash App for cross-border AUSD on **Monad Testnet**. Mera passkey onboarding, `@handle` / `+234` sends, dual-exit escrow, Chainlink CRE as **criteria engine** (`+234` OTP → HMAC relay → `writeReport`).
 
 ## What's in the repo
 
@@ -43,6 +43,14 @@ Passkeys need `http://localhost` (or HTTPS) and a PRF-capable authenticator (Goo
 
 **Get test funds** in the app drips `0.2 MON` + `25 AUSD` from the deployer key in repo-root `.env` (local demo only). Or use the Monad faucet for MON and Agora `requestFunds` for AUSD.
 
+## Fiat criteria (+234 OTP)
+
+1. **Me** → enter `+234…` → Send OTP (Termii, or mock `demoPin` if `TERMII_API_KEY` unset) → Verify  
+2. **Send** → pay `@alice` or `+234…` → app posts signed attestation for `paymentId`  
+3. CRE fetches attestation over HTTPS and releases only if HMAC verifies  
+
+Set the same `FIAT_RELAY_AUTH_TOKEN` in repo `.env` and CRE vault. Point CRE `fiatRelayUrl` at a **public** `https://…/api/fiat/attest` (not localhost), then redeploy the workflow. Details: [`blueprint/FIAT_CRITERIA.md`](blueprint/FIAT_CRITERIA.md).
+
 ## CRE workflow
 
 Staging uses the **private** (Chainlink-hosted) registry — no Ethereum mainnet ETH / `LinkOwner`.
@@ -50,6 +58,7 @@ Staging uses the **private** (Chainlink-hosted) registry — no Ethereum mainnet
 ```bash
 cd workflow
 # CRE_API_KEY in workflow/.env (cre login / API key)
+# Set fiatRelayUrl in remittance/config.staging.json to your public attest URL
 cre workflow deploy remittance --target staging-settings --yes --non-interactive
 
 # Local settle proof (uses MockKeystone — temporarily setForwarder to Mock if registry is on Keystone):
@@ -60,7 +69,7 @@ Live deploy: `nonapay-remittance-staging` on private registry. `NonaRegistry` fo
 
 ## Handle commitment
 
-UI `@amina` → on-chain `keccak256("handle:amina")`. Same scheme as Foundry tests and CRE fixtures.
+UI `@amina` → `keccak256("handle:amina")`. Phone `+2348012345678` → `keccak256("handle:2348012345678")`.
 
 ## Network policy
 

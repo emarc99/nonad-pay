@@ -15,7 +15,7 @@ describe('NonaPay report ABI parity', () => {
 			[paymentId, nullifier, recipientCommit, 1, 999n, true],
 		)
 		expect(encoded.startsWith('0x')).toBe(true)
-		expect(encoded.length).toBeGreaterThanOrEqual(2 + 64 * 6)
+		expect(encoded.length).toBe(2 + 64 * 6)
 	})
 })
 

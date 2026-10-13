@@ -1,4 +1,5 @@
 import {
+  decodeEventLog,
   parseUnits,
   type Abi,
   type Address,
@@ -161,7 +162,23 @@ export async function sendToHandle(rawHandle: string, amountStr: string, maxRisk
     account,
   })
   const receipt = await waitSuccess(hash)
-  return { hash, commit, amount, receipt }
+  let paymentId: Hex | undefined
+  for (const log of receipt.logs) {
+    try {
+      const decoded = decodeEventLog({
+        abi: gatewayAbi,
+        data: log.data,
+        topics: log.topics,
+      })
+      if (decoded.eventName === 'PaymentOpened') {
+        paymentId = decoded.args.paymentId as Hex
+        break
+      }
+    } catch {
+      /* other contracts in receipt */
+    }
+  }
+  return { hash, commit, amount, receipt, paymentId }
 }
 
 export async function requestAusdFaucet(to: Address) {

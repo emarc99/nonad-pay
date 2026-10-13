@@ -8,7 +8,7 @@ CRE is the **settlement engine**. Escrow unlocks only via DON/`writeReport` (or 
 
 | Rule | Do |
 | --- | --- |
-| Load-bearing TEE | Process phone plaintext / mock fiat HMAC / salt — not public AMM ticks |
+| Load-bearing TEE | Verify +234 OTP-backed HMAC attestation + salt — not public AMM ticks |
 | Delivery | `donRuntime.report` **and** `evmClient.writeReport` |
 | ABI parity | Encode matches `NonaRegistry` decode byte-for-byte |
 | Silent safe | Optional: no on-chain spam when nothing to settle |
@@ -17,8 +17,8 @@ CRE is the **settlement engine**. Escrow unlocks only via DON/`writeReport` (or 
 ## Secrets (Vault DON)
 
 - `ENCLAVE_NULLIFIER_SALT`
-- `FIAT_RELAY_AUTH_TOKEN` (HMAC for mock mobile-money attestation)
-- Optional AML API key
+- `FIAT_RELAY_AUTH_TOKEN` (HMAC + Bearer for fiat attest GET)
+- Config `fiatRelayUrl` — public HTTPS `…/api/fiat/attest`
 
 ## Nullifier
 

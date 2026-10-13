@@ -44,7 +44,9 @@ NonaPay is **Programmable Money for remittances**: payer locks Agora AUSD on Mon
 
 ### AquaGhost anti-patterns (blocked)
 
-- [x] Load-bearing secrets in TEE (salt, fiat mock HMAC, AML stub) — not public pool ticks  
+- [x] Load-bearing secrets in TEE (salt + +234 OTP HMAC attest verify) — not public pool ticks  
+- [x] CRE is payout-on-criteria (skip write until attestation; fail-closed on forged MAC)  
+
 - [x] Full `donRuntime.report` → `evm.writeReport` → `onReport`  
 - [x] Byte-for-byte ABI parity tests  
 - [x] Dual-exit escrow (release or reclaim)  

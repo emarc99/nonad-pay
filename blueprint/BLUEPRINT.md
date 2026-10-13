@@ -11,7 +11,7 @@ Remittance corridors lose 6–12% and take days. Crypto rails exist but demand s
 1. Mera Face ID onboarding — no seed phrase  
 2. Send to `@handle` / phone UI — opaque `recipientCommit` on-chain  
 3. Lock AUSD in dual-exit escrow  
-4. CRE TEE derives nullifier + attestation; `evm.writeReport` releases funds  
+4. CRE TEE verifies +234 OTP HMAC attestation (criteria), derives nullifier; `evm.writeReport` releases funds  
 5. If silent for 15 minutes → `reclaimFunds`
 
 ## Architecture

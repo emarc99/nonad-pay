@@ -1,6 +1,6 @@
 export type ActivityItem = {
   id: string
-  kind: 'send' | 'handle' | 'faucet' | 'drip'
+  kind: 'send' | 'handle' | 'faucet' | 'drip' | 'otp' | 'attest'
   title: string
   detail: string
   hash?: string
