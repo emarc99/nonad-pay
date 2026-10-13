@@ -22,47 +22,50 @@ Remittances still force seed phrases, `0x` addresses, and trust-me watchers. Non
 ## Architecture
 
 ```mermaid
-flowchart LR
+flowchart TB
   subgraph User
     PK[Mera passkey]
     UI[Next.js app]
   end
 
-  subgraph Monad[Monad Testnet]
+  PK --> UI
+
+  subgraph Pay[1. Pay on Monad]
     GW[NonaGateway]
     ESC[P2PEscrow]
     RES[PhoneResolver]
     REG[NonaRegistry]
   end
 
-  subgraph Offchain
+  UI -->|openPayment| GW
+  GW -->|lock AUSD| ESC
+  RES -->|resolve handle| REG
+
+  subgraph Attest[2. Fiat attest]
     OTP[NG OTP relay]
     RELAY[Fiat attest API]
     KV[(Upstash Redis)]
   end
 
-  subgraph CRE[Chainlink CRE TEE]
+  UI -->|OTP verify| OTP
+  OTP --> RELAY
+  UI -->|POST attest| RELAY
+  RELAY --> KV
+
+  subgraph CRE[3. Chainlink CRE TEE]
     LOG[PaymentOpened log]
     CRON[Cron filterLogs]
     TEE[HMAC verify]
     WR[writeReport]
   end
 
-  PK --> UI
-  UI -->|openPayment| GW
-  GW -->|lock AUSD| ESC
   GW -->|PaymentOpened| LOG
-  UI -->|OTP verify| OTP
-  OTP --> RELAY
-  RELAY --> KV
-  UI -->|POST attest| RELAY
   LOG --> TEE
   CRON --> TEE
   TEE -->|GET attest| RELAY
   TEE --> WR
   WR --> REG
   REG -->|release| ESC
-  RES -->|resolve handle| REG
 ```
 
 ### Settlement path
