@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { dirname, join } from 'node:path'
+import { tmpdir } from 'node:os'
 import type { FiatAttestation } from './attestation'
 
 type OtpPending = {
@@ -28,15 +29,49 @@ type StoreShape = {
 
 const g = globalThis as unknown as { __nonapayFiatStore?: StoreShape }
 
-function storePath() {
-  return resolve(process.cwd(), '.data/fiat-store.json')
-}
-
 function empty(): StoreShape {
   return { otp: {}, sessions: {}, attestations: {} }
 }
 
-function load(): StoreShape {
+function upstashConfigured(): boolean {
+  return Boolean(
+    process.env.UPSTASH_REDIS_REST_URL?.trim() && process.env.UPSTASH_REDIS_REST_TOKEN?.trim(),
+  )
+}
+
+/** Writable path: /tmp on Vercel (read-only bundle), .data locally. */
+function storePath() {
+  if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
+    return join(tmpdir(), 'nonapay-fiat-store.json')
+  }
+  return join(process.cwd(), '.data', 'fiat-store.json')
+}
+
+async function upstash<T>(command: unknown[]): Promise<T | null> {
+  const url = process.env.UPSTASH_REDIS_REST_URL!.trim().replace(/\/$/, '')
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN!.trim()
+  const res = await fetch(`${url}`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${token}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(command),
+    cache: 'no-store',
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`Upstash ${res.status}: ${text.slice(0, 200)}`)
+  }
+  const body = (await res.json()) as { result?: T }
+  return (body.result ?? null) as T | null
+}
+
+function ttlSeconds(expiresAt: number): number {
+  return Math.max(1, expiresAt - Math.floor(Date.now() / 1000))
+}
+
+function loadFs(): StoreShape {
   if (g.__nonapayFiatStore) return g.__nonapayFiatStore
   const path = storePath()
   try {
@@ -51,7 +86,7 @@ function load(): StoreShape {
   return g.__nonapayFiatStore
 }
 
-function persist(data: StoreShape) {
+function persistFs(data: StoreShape) {
   g.__nonapayFiatStore = data
   const path = storePath()
   mkdirSync(dirname(path), { recursive: true })
@@ -70,54 +105,102 @@ function prune(data: StoreShape, now = Math.floor(Date.now() / 1000)) {
   }
 }
 
-export function putOtp(row: OtpPending) {
-  const data = load()
+export async function putOtp(row: OtpPending) {
+  if (upstashConfigured()) {
+    await upstash(['SET', `nona:otp:${row.pinId}`, JSON.stringify(row), 'EX', ttlSeconds(row.expiresAt)])
+    return
+  }
+  const data = loadFs()
   prune(data)
   data.otp[row.pinId] = row
-  persist(data)
+  persistFs(data)
 }
 
-export function getOtp(pinId: string): OtpPending | undefined {
-  const data = load()
+export async function getOtp(pinId: string): Promise<OtpPending | undefined> {
+  if (upstashConfigured()) {
+    const raw = await upstash<string | null>(['GET', `nona:otp:${pinId}`])
+    if (!raw) return undefined
+    return JSON.parse(raw) as OtpPending
+  }
+  const data = loadFs()
   prune(data)
   return data.otp[pinId]
 }
 
-export function deleteOtp(pinId: string) {
-  const data = load()
+export async function deleteOtp(pinId: string) {
+  if (upstashConfigured()) {
+    await upstash(['DEL', `nona:otp:${pinId}`])
+    return
+  }
+  const data = loadFs()
   delete data.otp[pinId]
-  persist(data)
+  persistFs(data)
 }
 
-export function putSession(row: PhoneSession) {
-  const data = load()
+export async function putSession(row: PhoneSession) {
+  if (upstashConfigured()) {
+    await upstash([
+      'SET',
+      `nona:session:${row.token}`,
+      JSON.stringify(row),
+      'EX',
+      ttlSeconds(row.expiresAt),
+    ])
+    return
+  }
+  const data = loadFs()
   prune(data)
   data.sessions[row.token] = row
-  persist(data)
+  persistFs(data)
 }
 
-export function getSession(token: string): PhoneSession | undefined {
-  const data = load()
+export async function getSession(token: string): Promise<PhoneSession | undefined> {
+  if (upstashConfigured()) {
+    const raw = await upstash<string | null>(['GET', `nona:session:${token}`])
+    if (!raw) return undefined
+    return JSON.parse(raw) as PhoneSession
+  }
+  const data = loadFs()
   prune(data)
   const row = data.sessions[token]
   if (!row) return undefined
   if (row.expiresAt < Math.floor(Date.now() / 1000)) {
     delete data.sessions[token]
-    persist(data)
+    persistFs(data)
     return undefined
   }
   return row
 }
 
-export function putAttestation(att: FiatAttestation) {
-  const data = load()
+export async function putAttestation(att: FiatAttestation) {
+  if (upstashConfigured()) {
+    await upstash([
+      'SET',
+      `nona:attest:${att.paymentId.toLowerCase()}`,
+      JSON.stringify(att),
+      'EX',
+      ttlSeconds(att.expiry),
+    ])
+    return
+  }
+  const data = loadFs()
   prune(data)
   data.attestations[att.paymentId.toLowerCase()] = att
-  persist(data)
+  persistFs(data)
 }
 
-export function getAttestation(paymentId: string): FiatAttestation | undefined {
-  const data = load()
+export async function getAttestation(paymentId: string): Promise<FiatAttestation | undefined> {
+  const id = paymentId.toLowerCase()
+  if (upstashConfigured()) {
+    const raw = await upstash<string | null>(['GET', `nona:attest:${id}`])
+    if (!raw) return undefined
+    return JSON.parse(raw) as FiatAttestation
+  }
+  const data = loadFs()
   prune(data)
-  return data.attestations[paymentId.toLowerCase()]
+  return data.attestations[id]
+}
+
+export function fiatStoreBackend(): 'upstash' | 'filesystem' {
+  return upstashConfigured() ? 'upstash' : 'filesystem'
 }

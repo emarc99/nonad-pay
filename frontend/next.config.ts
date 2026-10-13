@@ -23,7 +23,9 @@ function loadRootEnv() {
         key === 'AFRICASTALKING_API_KEY' ||
         key === 'AFRICASTALKING_USERNAME' ||
         key === 'AFRICASTALKING_FROM' ||
-        key === 'OTP_PROVIDER'
+        key === 'OTP_PROVIDER' ||
+        key === 'UPSTASH_REDIS_REST_URL' ||
+        key === 'UPSTASH_REDIS_REST_TOKEN'
       ) {
         process.env[key] = value
       }

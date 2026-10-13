@@ -23,7 +23,7 @@ export async function GET(req: Request) {
   if (!authorizedFetch(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
-  const att = getAttestation(paymentId)
+  const att = await getAttestation(paymentId)
   if (!att) {
     return NextResponse.json({ error: 'No attestation for paymentId' }, { status: 404 })
   }
@@ -58,7 +58,7 @@ export async function POST(req: Request) {
     if (!body.sessionToken || !body.address) {
       return NextResponse.json({ error: 'sessionToken and address required' }, { status: 400 })
     }
-    const session = getSession(body.sessionToken)
+    const session = await getSession(body.sessionToken)
     if (!session) {
       return NextResponse.json(
         { error: 'Phone session missing or expired. Complete +234 OTP first.' },
@@ -77,7 +77,7 @@ export async function POST(req: Request) {
       tier,
       expiry,
     })
-    putAttestation(att)
+    await putAttestation(att)
     return NextResponse.json({
       ok: true,
       attestation: att,

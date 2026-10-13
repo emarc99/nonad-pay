@@ -18,7 +18,7 @@ export async function POST(req: Request) {
     })
     const token = randomBytes(24).toString('base64url')
     const expiresAt = Math.floor(Date.now() / 1000) + SESSION_TTL_SEC
-    putSession({
+    await putSession({
       token,
       address: body.address.toLowerCase(),
       phone,

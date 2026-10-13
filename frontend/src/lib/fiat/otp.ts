@@ -65,7 +65,7 @@ async function sendTermiiOtp(params: {
   if (!res.ok || !pinId) {
     throw new Error(body.message || body.smsStatus || 'Termii OTP send failed')
   }
-  putOtp({
+  await putOtp({
     pinId,
     address: params.address,
     phone: params.phone,
@@ -121,7 +121,7 @@ export async function sendOtp(params: {
       toE164: phone,
       message: `Your NonaPay verification code is ${pin}. Valid 10 minutes. Do not share.`,
     })
-    putOtp({
+    await putOtp({
       pinId,
       address,
       phone,
@@ -142,7 +142,7 @@ export async function sendOtp(params: {
     }
   }
 
-  putOtp({
+  await putOtp({
     pinId,
     address,
     phone,
@@ -166,13 +166,13 @@ export async function verifyOtp(params: {
   pin: string
   address: string
 }): Promise<{ phone: string }> {
-  const pending = getOtp(params.pinId)
+  const pending = await getOtp(params.pinId)
   if (!pending) throw new Error('OTP expired or unknown. Request a new code.')
   if (pending.address !== params.address.toLowerCase()) {
     throw new Error('OTP was requested for a different passkey session.')
   }
   if (pending.expiresAt < Math.floor(Date.now() / 1000)) {
-    deleteOtp(params.pinId)
+    await deleteOtp(params.pinId)
     throw new Error('OTP expired. Request a new code.')
   }
 
@@ -185,7 +185,7 @@ export async function verifyOtp(params: {
     if (!pending.pinHash || hashPin(pin) !== pending.pinHash) {
       throw new Error('Incorrect code')
     }
-    deleteOtp(params.pinId)
+    await deleteOtp(params.pinId)
     return { phone: pending.phone }
   }
 
@@ -205,6 +205,6 @@ export async function verifyOtp(params: {
   if (!res.ok || !ok) {
     throw new Error(body.message || 'OTP verification failed')
   }
-  deleteOtp(params.pinId)
+  await deleteOtp(params.pinId)
   return { phone: pending.phone }
 }
