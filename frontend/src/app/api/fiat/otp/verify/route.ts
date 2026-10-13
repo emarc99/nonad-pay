@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import { NextResponse } from 'next/server'
-import { verifyOtp } from '@/lib/fiat/termii'
+import { verifyOtp } from '@/lib/fiat/otp'
 import { putSession } from '@/lib/fiat/store'
 
 const SESSION_TTL_SEC = 30 * 60

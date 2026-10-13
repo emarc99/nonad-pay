@@ -6,10 +6,11 @@ type OtpPending = {
   pinId: string
   address: string
   phone: string
-  /** sha256 hex of pin when mock mode */
+  /** sha256 hex of pin when we generate it (mock / Africa's Talking) */
   pinHash?: string
   expiresAt: number
   mock: boolean
+  provider?: 'mock' | 'termii' | 'africastalking'
 }
 
 type PhoneSession = {

@@ -249,9 +249,11 @@ export default function Home() {
       setActivity(list)
       setStatus({
         tone: 'ok',
-        text: data.mock
-          ? `Mock OTP ready (${data.demoPin}) — no TERMII_API_KEY`
-          : `Code sent to ${data.phone}`,
+        text:
+          data.hint ||
+          (data.mock
+            ? `Mock OTP ready (${data.demoPin})`
+            : `Code sent to ${data.phone} via ${data.provider}`),
       })
     })
   }
@@ -512,8 +514,8 @@ export default function Home() {
               <div>
                 <h2 className="font-[family-name:var(--font-display)] text-2xl font-bold">+234 phone</h2>
                 <p className="mt-2 text-sm text-[var(--mist)]">
-                  Termii OTP proves your number. After each pay, we post a signed attestation; CRE
-                  releases escrow only when that HMAC verifies (webhook-gated criteria).
+                  +234 OTP proves your number (Africa&apos;s Talking sandbox, Termii, or mock). After
+                  each pay, we post a signed attestation; CRE releases only when HMAC verifies.
                 </p>
               </div>
               <input

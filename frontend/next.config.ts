@@ -19,7 +19,11 @@ function loadRootEnv() {
         key === 'FIAT_RELAY_AUTH_TOKEN' ||
         key === 'TERMII_API_KEY' ||
         key === 'TERMII_SENDER_ID' ||
-        key === 'TERMII_BASE_URL'
+        key === 'TERMII_BASE_URL' ||
+        key === 'AFRICASTALKING_API_KEY' ||
+        key === 'AFRICASTALKING_USERNAME' ||
+        key === 'AFRICASTALKING_FROM' ||
+        key === 'OTP_PROVIDER'
       ) {
         process.env[key] = value
       }

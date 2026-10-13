@@ -42,11 +42,19 @@ export async function requestOtp(address: string, phone: string) {
     pinId?: string
     phone?: string
     mock?: boolean
+    provider?: string
     demoPin?: string
     hint?: string
   }
   if (!res.ok) throw new Error(data.error ?? 'OTP request failed')
-  return data as { pinId: string; phone: string; mock: boolean; demoPin?: string; hint?: string }
+  return data as {
+    pinId: string
+    phone: string
+    mock: boolean
+    provider: string
+    demoPin?: string
+    hint?: string
+  }
 }
 
 export async function verifyOtp(address: string, pinId: string, pin: string) {

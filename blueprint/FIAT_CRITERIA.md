@@ -5,7 +5,7 @@ CRE is the **payout-on-criteria** engine: AUSD stays in escrow until an off-chai
 ## Flow (PayPal-style webhook gate)
 
 ```
-1. Payer verifies +234 via Termii OTP (or mock OTP if TERMII_API_KEY unset)
+1. Payer verifies +234 via OTP provider (Africa's Talking sandbox → Termii → mock)
 2. Verify callback mints a phone session token
 3. openPayment locks AUSD → PaymentOpened
 4. App POSTs /api/fiat/attest { paymentId, sessionToken }  ← truth gate
@@ -26,7 +26,9 @@ Recipient field accepts `@alice` **or** `+2348012345678` (opaque `handle:234801�
 | Env | Role |
 | --- | --- |
 | `FIAT_RELAY_AUTH_TOKEN` | Shared HMAC + CRE GET auth (Next + CRE vault) |
-| `TERMII_API_KEY` | Live SMS; omit → mock OTP with `demoPin` |
+| `AFRICASTALKING_API_KEY` | Sandbox SMS (simulator, no CAC) — preferred for testing |
+| `TERMII_API_KEY` | Live NG SMS (needs approved sender + DND) |
+| `OTP_PROVIDER` | Optional force: `africastalking` \| `termii` \| `mock` |
 | `fiatRelayUrl` in CRE config | **Public HTTPS** attest URL (DON cannot hit localhost) |
 
 ## Honest limits

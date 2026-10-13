@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { sendOtp } from '@/lib/fiat/termii'
+import { sendOtp } from '@/lib/fiat/otp'
 
 export async function POST(req: Request) {
   try {
@@ -15,10 +15,9 @@ export async function POST(req: Request) {
       pinId: result.pinId,
       phone: result.phone,
       mock: result.mock,
+      provider: result.provider,
       ...(result.demoPin ? { demoPin: result.demoPin } : {}),
-      hint: result.mock
-        ? 'TERMII_API_KEY unset — mock OTP (demoPin returned). Same webhook→relay→CRE path.'
-        : 'SMS sent via Termii. Enter the code to unlock attestation.',
+      hint: result.hint,
     })
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'OTP request failed'
