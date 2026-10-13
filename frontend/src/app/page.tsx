@@ -173,7 +173,7 @@ export default function Home() {
         tone: 'ok',
         text: linked
           ? `Signed in · ${shorten(addr)} · linked ${displayHandle(linked)}`
-          : `Signed in · ${shorten(addr)}. Link your @ on My @ if this device is new.`,
+          : `Signed in · ${shorten(addr)}. Link your @ on Me if this device is new.`,
       })
     })
   }
@@ -191,7 +191,9 @@ export default function Home() {
     run('Approving + opening payment…', async () => {
       const session = phoneSession ?? loadPhoneSession()
       if (!session || session.address !== address.toLowerCase()) {
-        throw new Error('Verify your +234 phone on My @ first — CRE releases only after OTP attestation.')
+        throw new Error(
+          'This passkey has no verified +234 yet. On Me: Send OTP → Verify, then Pay. (OTP is per passkey — Alice and emarc99 each need their own.)',
+        )
       }
       const { hash, commit, paymentId } = await sendToHandle(handle, amount)
       let list = pushActivity({
