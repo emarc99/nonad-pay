@@ -33,10 +33,25 @@ function empty(): StoreShape {
   return { otp: {}, sessions: {}, attestations: {} }
 }
 
-function upstashConfigured(): boolean {
-  return Boolean(
-    process.env.UPSTASH_REDIS_REST_URL?.trim() && process.env.UPSTASH_REDIS_REST_TOKEN?.trim(),
+/** Vercel Upstash integration often injects KV_REST_API_*; CLI/docs use UPSTASH_REDIS_REST_*. */
+function redisRestUrl(): string | undefined {
+  return (
+    process.env.UPSTASH_REDIS_REST_URL?.trim() ||
+    process.env.KV_REST_API_URL?.trim() ||
+    undefined
   )
+}
+
+function redisRestToken(): string | undefined {
+  return (
+    process.env.UPSTASH_REDIS_REST_TOKEN?.trim() ||
+    process.env.KV_REST_API_TOKEN?.trim() ||
+    undefined
+  )
+}
+
+function upstashConfigured(): boolean {
+  return Boolean(redisRestUrl() && redisRestToken())
 }
 
 /** Writable path: /tmp on Vercel (read-only bundle), .data locally. */
@@ -48,8 +63,8 @@ function storePath() {
 }
 
 async function upstash<T>(command: unknown[]): Promise<T | null> {
-  const url = process.env.UPSTASH_REDIS_REST_URL!.trim().replace(/\/$/, '')
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN!.trim()
+  const url = redisRestUrl()!.replace(/\/$/, '')
+  const token = redisRestToken()!
   const res = await fetch(`${url}`, {
     method: 'POST',
     headers: {
