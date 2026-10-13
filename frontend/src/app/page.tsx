@@ -243,16 +243,25 @@ export default function Home() {
       setPhoneInput(data.phone)
       const list = pushActivity({
         kind: 'otp',
-        title: data.mock ? `Mock OTP → ${data.phone}` : `OTP sent → ${data.phone}`,
-        detail: data.mock ? `demo code ${data.demoPin}` : 'Enter the SMS code',
+        title:
+          data.provider === 'africastalking'
+            ? `Sandbox OTP → ${data.phone}`
+            : data.mock
+              ? `Mock OTP → ${data.phone}`
+              : `OTP sent → ${data.phone}`,
+        detail: data.demoPin
+          ? `code ${data.demoPin}`
+          : data.provider === 'africastalking'
+            ? 'Check AT Bulk Outbox if UI code missing'
+            : 'Enter the SMS code',
       })
       setActivity(list)
       setStatus({
         tone: 'ok',
         text:
           data.hint ||
-          (data.mock
-            ? `Mock OTP ready (${data.demoPin})`
+          (data.demoPin
+            ? `OTP ready (${data.demoPin}) via ${data.provider}`
             : `Code sent to ${data.phone} via ${data.provider}`),
       })
     })
@@ -538,7 +547,7 @@ export default function Home() {
                 <div className="flex flex-col gap-2 sm:flex-row">
                   <input
                     className="field"
-                    placeholder={demoPin ? `Code (${demoPin})` : 'SMS code'}
+                    placeholder={demoPin ? `Code ${demoPin}` : 'SMS / sandbox code'}
                     value={otpPin}
                     onChange={(e) => setOtpPin(e.target.value)}
                     inputMode="numeric"

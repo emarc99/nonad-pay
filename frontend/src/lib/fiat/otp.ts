@@ -130,12 +130,15 @@ export async function sendOtp(params: {
       mock: false,
       provider: 'africastalking',
     })
+    // Sandbox only: return pin in API. AT simulator (:1517) is often unreachable;
+    // code also appears in Sandbox → SMS → Bulk Outbox. Never do this for live Termii.
     return {
       pinId,
       phone,
       mock: false,
       provider,
-      hint: `Sandbox SMS queued. Open AT simulator, register ${phone}, read the code from inbox (not your handset).`,
+      demoPin: pin,
+      hint: `Sandbox OTP ${pin} — also in AT Bulk Outbox for ${phone}. Simulator :1517 is optional (often blocked).`,
     }
   }
 
