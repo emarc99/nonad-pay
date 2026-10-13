@@ -1,7 +1,9 @@
 /**
  * Africa's Talking Sandbox SMS OTP.
+ * Auth: username `sandbox` + sandbox API key header `apikey`
+ * (see https://developers.africastalking.com/docs/authentication
+ *  and https://developers.africastalking.com/docs/sms/overview).
  * Messages appear in https://simulator.africastalking.com:1517/ — not on a real handset.
- * Docs: https://help.africastalking.com/en/articles/1170660-how-do-i-get-started-on-the-africa-s-talking-sandbox
  */
 
 const SANDBOX_SMS = 'https://api.sandbox.africastalking.com/version1/messaging'
@@ -18,7 +20,7 @@ export async function sendSandboxSms(params: {
   if (!apiKey) throw new Error('AFRICASTALKING_API_KEY missing')
 
   const username = process.env.AFRICASTALKING_USERNAME?.trim() || 'sandbox'
-  const from = process.env.AFRICASTALKING_FROM?.trim() // optional shortcode
+  const from = process.env.AFRICASTALKING_FROM?.trim() // only if you have a sandbox shortcode
 
   const body = new URLSearchParams()
   body.set('username', username)
@@ -30,7 +32,8 @@ export async function sendSandboxSms(params: {
     method: 'POST',
     headers: {
       Accept: 'application/json',
-      apiKey,
+      // Official SDK / docs use lowercase `apikey` (form body, not JSON).
+      apikey: apiKey,
       'Content-Type': 'application/x-www-form-urlencoded',
     },
     body,
@@ -46,26 +49,24 @@ export async function sendSandboxSms(params: {
   try {
     parsed = JSON.parse(text) as typeof parsed
   } catch {
-    /* AT sometimes returns XML if Accept ignored */
+    /* AT may return XML if Accept is wrong */
   }
 
   const recipient = parsed.SMSMessageData?.Recipients?.[0]
+  const summary = parsed.SMSMessageData?.Message || ''
+  // Success is HTTP 201 + recipient statusCode 101 (Queued/Success).
   const ok =
-    res.ok &&
-    recipient &&
-    (recipient.statusCode === 101 ||
-      recipient.statusCode === 100 ||
-      /success|sent/i.test(recipient.status || ''))
+    (res.ok || res.status === 201) &&
+    Boolean(recipient) &&
+    (recipient!.statusCode === 101 ||
+      recipient!.statusCode === 100 ||
+      /success/i.test(recipient!.status || ''))
 
   if (!ok) {
-    const hint =
-      parsed.SMSMessageData?.Message ||
-      recipient?.status ||
-      text.slice(0, 240) ||
-      `HTTP ${res.status}`
+    const hint = summary || recipient?.status || text.slice(0, 240) || `HTTP ${res.status}`
     if (res.status === 401 || /authentication is invalid/i.test(hint)) {
       throw new Error(
-        `Africa's Talking auth invalid (401). Use the API key from the Sandbox app (username must be "sandbox"), not live. New keys can take up to ~20 minutes to activate — then retry.`,
+        `Africa's Talking auth invalid (401). Confirm key from Sandbox → Settings → API Key, username=sandbox. New keys can take up to ~20 minutes.`,
       )
     }
     throw new Error(
