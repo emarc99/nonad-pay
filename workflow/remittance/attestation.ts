@@ -1,8 +1,10 @@
 /**
- * Fiat relay attestation (must match frontend/src/lib/fiat/attestation.ts byte-for-byte).
+ * Fiat relay attestation (canonical string must match frontend/src/lib/fiat/attestation.ts).
  * CRE fetches JSON from fiatRelayUrl and verifies HMAC-SHA256 before approving.
  */
-import { createHmac, timingSafeEqual } from 'node:crypto'
+import { hmac } from '@noble/hashes/hmac'
+import { sha256 } from '@noble/hashes/sha256'
+import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils'
 
 export const ATTESTATION_VERSION = 'v1' as const
 
@@ -30,6 +32,20 @@ export function attestationCanonical(parts: {
 	].join('|')
 }
 
+function hmacSha256Hex(secret: string, message: string): string {
+	return bytesToHex(hmac(sha256, utf8ToBytes(secret), utf8ToBytes(message)))
+}
+
+/** Constant-time hex compare (equal length only). */
+function safeEqualHex(a: string, b: string): boolean {
+	const x = a.toLowerCase()
+	const y = b.toLowerCase()
+	if (x.length !== y.length) return false
+	let out = 0
+	for (let i = 0; i < x.length; i++) out |= x.charCodeAt(i) ^ y.charCodeAt(i)
+	return out === 0
+}
+
 export function verifyAttestation(
 	secret: string,
 	att: FiatAttestation,
@@ -42,20 +58,17 @@ export function verifyAttestation(
 	if (!Number.isFinite(att.expiry) || att.expiry <= nowSec) return { ok: false, reason: 'expired' }
 	if (!/^[a-f0-9]{64}$/i.test(att.sig)) return { ok: false, reason: 'bad sig format' }
 
-	const expected = createHmac('sha256', secret)
-		.update(
-			attestationCanonical({
-				paymentId: att.paymentId,
-				phoneHint: att.phoneHint,
-				tier: att.tier,
-				expiry: att.expiry,
-			}),
-		)
-		.digest('hex')
+	const expected = hmacSha256Hex(
+		secret,
+		attestationCanonical({
+			paymentId: att.paymentId,
+			phoneHint: att.phoneHint,
+			tier: att.tier,
+			expiry: att.expiry,
+		}),
+	)
 
-	const a = Buffer.from(expected, 'hex')
-	const b = Buffer.from(att.sig, 'hex')
-	if (a.length !== b.length || !timingSafeEqual(a, b)) {
+	if (!safeEqualHex(expected, att.sig)) {
 		return { ok: false, reason: 'bad signature' }
 	}
 	return { ok: true, phoneHint: att.phoneHint, tier: att.tier, expiry: att.expiry }
