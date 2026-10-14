@@ -139,6 +139,28 @@ export default function PitchPage() {
     return () => window.removeEventListener('wheel', onWheel)
   }, [goTo, index])
 
+  // ?autoplay=1 — timed advance for screen-recorded pitch clips
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('autoplay') !== '1') return
+    const ms = Number(params.get('ms') || '8000')
+    const id = window.setInterval(() => {
+      setIndex((current) => {
+        const next = current + 1
+        if (next >= SLIDES.length) {
+          window.clearInterval(id)
+          return current
+        }
+        const el = scrollerRef.current
+        const child = el?.children[next] as HTMLElement | undefined
+        child?.scrollIntoView({ behavior: 'smooth', inline: 'start', block: 'nearest' })
+        return next
+      })
+    }, Number.isFinite(ms) && ms > 1000 ? ms : 8000)
+    return () => window.clearInterval(id)
+  }, [])
+
   return (
     <div className="pitch-root relative h-[100dvh] w-full overflow-hidden text-[var(--foam)]">
       <header className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-center justify-between px-5 py-4 sm:px-8">
