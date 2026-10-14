@@ -15,7 +15,9 @@ Passkey in → send to `@handles` / `+234` → dual-exit escrow → Chainlink CR
 
 ## Why it exists
 
-Remittances still force seed phrases, `0x` addresses, and trust-me watchers. NonaPay keeps the UX invisible-chain (Mera passkeys + `@handles`) while settlement is **programmable**: Agora AUSD locks in escrow until a CRE confidential workflow verifies a `+234` OTP attestation. If CRE never releases, the payer **reclaims in 15 minutes**.
+Sending money home still forces a bad choice: trust a remittance app to hold and release your funds, or go on-chain and wrestle seed phrases and wallet addresses. Neither path answers a simple question — *did the receiver prove it?* — without a human watcher in the middle.
+
+NonaPay exists to close that gap. Users get Cash App-like simple sends (passkey, `@handle`, or phone number), money that only unlocks when Chainlink CRE verifies a real OTP attestation, and their funds back in 15 minutes if release never comes — proof without a middleman, not hope.
 
 ---
 
